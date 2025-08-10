@@ -125,7 +125,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             # Navigate to app directory
-            cd /postgres-manager
+            cd /root/postgres-manager
             
             # Pull latest images
             echo "Pulling latest images..."
