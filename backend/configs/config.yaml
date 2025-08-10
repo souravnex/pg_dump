@@ -1,19 +1,21 @@
 servers:
   - id: "remote-1"
-    name: "Test Server "
+    name: "Test Server"
     host: "88.222.242.59"
-    port: 5432
-    username: "postgres"
-    private_key: /home/sourav/.ssh/id_rsa"
+    port: 22
+    username: "root"
+    postgres_user: "postgres"
+    private_key: "/Users/sourav/Downloads/nexgensis_server.pem" 
     docker_host: "unix:///var/run/docker.sock"
     description: "Test Server"
   
   - id: "remote-2"
     name: "Demo Server"
     host: "89.116.20.193"
-    port: 5432
-    username: "postgres"
-    private_key: /home/sourav/.ssh/id_rsa"
+    port: 22
+    username: "root"
+    postgres_user: "postgres"
+    private_key: "/Users/sourav/Downloads/nexgensis_server.pem"    
     docker_host: "unix:///var/run/docker.sock"
     description: "Demo server"
 

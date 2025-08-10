@@ -56,9 +56,12 @@ func (h *Handler) GetServers(c *gin.Context) {
 			Status:      "unknown", // We'll check this in real-time if needed
 		}
 
-		// Optional: Test connection to determine status
-		// This might slow down the response, so consider making it optional
 		servers = append(servers, serverResp)
+	}
+
+	// Ensure we never return null
+	if servers == nil {
+		servers = []models.ServerResponse{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -70,6 +73,7 @@ func (h *Handler) GetServers(c *gin.Context) {
 // GetContainers returns PostgreSQL containers on a specific server
 func (h *Handler) GetContainers(c *gin.Context) {
 	serverID := c.Param("serverID")
+	h.logger.Infof("Getting containers for server: %s", serverID)
 
 	server, err := h.config.GetServerByID(serverID)
 	if err != nil {
@@ -82,27 +86,27 @@ func (h *Handler) GetContainers(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Increased timeout for remote operations
 	defer cancel()
 
-	// Get Docker host (use SSH tunnel if needed)
-	dockerHost := server.DockerHost
-	if dockerHost == "" {
-		dockerHost = h.config.Docker.DefaultHost
-	}
-
-	// Get PostgreSQL containers
-	containers, err := h.dockerService.GetPostgreSQLContainers(ctx, dockerHost)
+	// Use SSH-based Docker discovery for remote servers
+	containers, err := h.dockerService.GetPostgreSQLContainers(ctx, server, h.sshService)
 	if err != nil {
-		h.logger.Errorf("Failed to get containers: %v", err)
+		h.logger.Errorf("Failed to get containers from %s: %v", server.Host, err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
 			Error:   "Failed to get containers",
-			Message: err.Error(),
+			Message: fmt.Sprintf("Could not retrieve containers from %s: %v", server.Host, err),
 			Code:    http.StatusInternalServerError,
 		})
 		return
 	}
 
+	// Ensure we return an empty array, not null
+	if containers == nil {
+		containers = []models.ContainerResponse{}
+	}
+
+	h.logger.Infof("Returning %d containers for server %s", len(containers), serverID)
 	c.JSON(http.StatusOK, gin.H{
 		"containers": containers,
 		"server_id":  serverID,
@@ -114,6 +118,7 @@ func (h *Handler) GetContainers(c *gin.Context) {
 func (h *Handler) GetDatabases(c *gin.Context) {
 	serverID := c.Param("serverID")
 	containerID := c.Param("containerID")
+	h.logger.Infof("Getting databases for server: %s, container: %s", serverID, containerID)
 
 	server, err := h.config.GetServerByID(serverID)
 	if err != nil {
@@ -126,17 +131,11 @@ func (h *Handler) GetDatabases(c *gin.Context) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Get Docker host
-	dockerHost := server.DockerHost
-	if dockerHost == "" {
-		dockerHost = h.config.Docker.DefaultHost
-	}
-
-	// Get databases
-	databases, err := h.postgresService.GetDatabases(ctx, dockerHost, containerID)
+	// Get databases using SSH
+	databases, err := h.postgresService.GetDatabasesViaSSH(ctx, server, containerID, h.sshService)
 	if err != nil {
 		h.logger.Errorf("Failed to get databases: %v", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -145,6 +144,11 @@ func (h *Handler) GetDatabases(c *gin.Context) {
 			Code:    http.StatusInternalServerError,
 		})
 		return
+	}
+
+	// Ensure we return an empty array, not null
+	if databases == nil {
+		databases = []models.DatabaseResponse{}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -189,16 +193,10 @@ func (h *Handler) DownloadDump(c *gin.Context) {
 
 	ctx := context.Background() // Don't set timeout for dump operations
 
-	// Get Docker host
-	dockerHost := server.DockerHost
-	if dockerHost == "" {
-		dockerHost = h.config.Docker.DefaultHost
-	}
+	h.logger.Infof("Creating dump for database %s in container %s on server %s", dbName, containerID, serverID)
 
-	h.logger.Infof("Creating dump for database %s in container %s", dbName, containerID)
-
-	// Create dump stream
-	dumpReader, err := h.postgresService.CreateDump(ctx, dockerHost, containerID, dbName, options)
+	// Create dump stream via SSH
+	dumpReader, err := h.postgresService.CreateDumpViaSSH(ctx, server, containerID, dbName, options, h.sshService)
 	if err != nil {
 		h.logger.Errorf("Failed to create dump: %v", err)
 		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
@@ -232,8 +230,6 @@ func (h *Handler) DownloadDump(c *gin.Context) {
 	})
 }
 
-// Additional helper methods
-
 // CheckServerStatus checks if a server is accessible
 func (h *Handler) CheckServerStatus(c *gin.Context) {
 	serverID := c.Param("serverID")
@@ -248,24 +244,22 @@ func (h *Handler) CheckServerStatus(c *gin.Context) {
 		return
 	}
 
-	// Test SSH connection if SSH is configured
-	if server.Username != "" {
-		sshConfig := services.SSHConfig{
-			Host:       server.Host,
-			Port:       server.Port,
-			Username:   server.Username,
-			Password:   server.Password,
-			PrivateKey: server.PrivateKey,
-		}
+	// Test SSH connection
+	sshConfig := services.SSHConfig{
+		Host:       server.Host,
+		Port:       server.Port,
+		Username:   server.Username,
+		Password:   server.Password,
+		PrivateKey: server.PrivateKey,
+	}
 
-		if err := h.sshService.TestConnection(sshConfig); err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"server_id": serverID,
-				"status":    "unreachable",
-				"error":     err.Error(),
-			})
-			return
-		}
+	if err := h.sshService.TestConnection(sshConfig); err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"server_id": serverID,
+			"status":    "unreachable",
+			"error":     err.Error(),
+		})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{

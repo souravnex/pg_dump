@@ -1,135 +1,188 @@
-import { useState } from 'react';
-import { Server, ConnectionStatus } from '../types';
-import { ChevronDown, Server as ServerIcon, Wifi, WifiOff, RefreshCw } from 'lucide-react';
-import { Button } from './ui/button';
+import { useState, useEffect } from 'react';
+import { Server as ServerIcon, Wifi, WifiOff, Clock } from 'lucide-react';
+import { Server } from '@/types/api';
+import { apiService } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 
 interface ServerSelectorProps {
-  servers: Server[];
-  selectedServer: Server | null;
-  connectionStatus: ConnectionStatus;
-  isLoading: boolean;
   onServerSelect: (server: Server) => void;
-  onRefresh: () => void;
+  selectedServer?: Server;
 }
 
-export const ServerSelector = ({
-  servers,
-  selectedServer,
-  connectionStatus,
-  isLoading,
-  onServerSelect,
-  onRefresh
-}: ServerSelectorProps) => {
-  const [isOpen, setIsOpen] = useState(false);
+export function ServerSelector({ onServerSelect, selectedServer }: ServerSelectorProps) {
+  const [servers, setServers] = useState<Server[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const getStatusIcon = () => {
-    switch (connectionStatus) {
-      case ConnectionStatus.CONNECTED:
-        return <Wifi className="h-4 w-4 text-success" />;
-      case ConnectionStatus.ERROR:
-        return <WifiOff className="h-4 w-4 text-destructive" />;
+  useEffect(() => {
+    const fetchServers = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const serverList = await apiService.getServers();
+        setServers(serverList);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to fetch servers. Please check your connection.";
+        setError(message);
+        toast({
+          title: "Error",
+          description: message,
+          variant: "destructive",
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchServers();
+  }, [toast]);
+
+  const handleRetry = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const serverList = await apiService.getServers();
+      setServers(serverList);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch servers. Please check your connection.';
+      setError(message);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getStatusIcon = (status: Server['status']) => {
+    switch (status) {
+      case 'online':
+        return <Wifi className="h-4 w-4 text-status-online" />;
+      case 'offline':
+        return <WifiOff className="h-4 w-4 text-status-offline" />;
+      case 'pending':
+        return <Clock className="h-4 w-4 text-status-pending" />;
       default:
         return <WifiOff className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
-  const getStatusText = () => {
-    switch (connectionStatus) {
-      case ConnectionStatus.CONNECTED:
-        return 'Connected';
-      case ConnectionStatus.ERROR:
-        return 'Connection Error';
+  const getStatusVariant = (status: Server['status']): "default" | "secondary" | "destructive" => {
+    switch (status) {
+      case 'online':
+        return 'default';
+      case 'offline':
+        return 'destructive';
+      case 'pending':
+        return 'secondary';
       default:
-        return 'Disconnected';
+        return 'secondary';
     }
   };
 
+  if (isLoading) {
+    return (
+      <Card className="shadow-medium transition-all duration-normal">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ServerIcon className="h-5 w-5" />
+            Select Server
+          </CardTitle>
+          <CardDescription>
+            Choose a PostgreSQL server to manage
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-10 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="shadow-medium transition-all duration-normal">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ServerIcon className="h-5 w-5" />
+            Select Server
+          </CardTitle>
+          <CardDescription>Choose a PostgreSQL server to manage</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <Alert variant="destructive">
+              <AlertTitle>Failed to load servers</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <Button onClick={handleRetry} variant="outline">Retry</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <div className="glass rounded-xl p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+    <Card className="shadow-medium transition-all duration-normal hover:shadow-large">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
           <ServerIcon className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Database Server</h2>
-        </div>
-        <div className="flex items-center gap-2">
-          {getStatusIcon()}
-          <span className="text-sm text-muted-foreground">{getStatusText()}</span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="p-1"
-          >
-            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-        </div>
-      </div>
-
-      <div className="relative">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="w-full glass-subtle rounded-lg p-4 flex items-center justify-between hover:bg-secondary/10 transition-smooth"
-          disabled={servers.length === 0}
+          Select Server
+        </CardTitle>
+        <CardDescription>
+          Choose a PostgreSQL server to manage
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Select
+          value={selectedServer?.id}
+          onValueChange={(value) => {
+            const server = servers.find(s => s.id === value);
+            if (server) onServerSelect(server);
+          }}
         >
-          <div className="flex items-center gap-3">
-            {selectedServer ? (
-              <div>
-                <div className="font-medium text-foreground">{selectedServer.name}</div>
-                <div className="text-sm text-muted-foreground">
-                  {selectedServer.host}:{selectedServer.port}
-                </div>
-              </div>
-            ) : (
-              <div className="text-muted-foreground">
-                {servers.length === 0 ? 'No servers available' : 'Select a server...'}
-              </div>
-            )}
-          </div>
-          <ChevronDown 
-            className={`h-4 w-4 text-muted-foreground transition-transform ${
-              isOpen ? 'rotate-180' : ''
-            }`} 
-          />
-        </button>
-
-        {isOpen && servers.length > 0 && (
-          <div className="absolute top-full left-0 right-0 mt-2 glass rounded-lg border border-glass-border shadow-glass z-50">
-            <div className="p-2">
-              {servers.map((server) => (
-                <button
-                  key={server.id}
-                  onClick={() => {
-                    onServerSelect(server);
-                    setIsOpen(false);
-                  }}
-                  className="w-full text-left p-3 rounded-lg hover:bg-secondary/20 transition-smooth"
-                >
-                  <div className="font-medium text-foreground">{server.name}</div>
-                  <div className="text-sm text-muted-foreground">
-                    {server.host}:{server.port}
+          <SelectTrigger className="transition-all duration-fast">
+            <SelectValue placeholder="Choose a server" />
+          </SelectTrigger>
+          <SelectContent className="bg-popover border shadow-large">
+            {servers.map((server) => (
+              <SelectItem key={server.id} value={server.id}>
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(server.status)}
+                    <div className="flex flex-col">
+                      <span className="font-medium">{server.name}</span>
+                      <span className="text-sm text-muted-foreground">
+                        {server.host}:{server.port}
+                      </span>
+                    </div>
                   </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {selectedServer && (
-        <div className="mt-4 p-4 glass-subtle rounded-lg">
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-muted-foreground">Host:</span>
-              <div className="font-medium">{selectedServer.host}</div>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Port:</span>
-              <div className="font-medium">{selectedServer.port}</div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+                  <Badge variant={getStatusVariant(server.status)} className="ml-2">
+                    {server.status}
+                  </Badge>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </CardContent>
+    </Card>
   );
-};
+}

@@ -1,133 +1,216 @@
-import { useState } from 'react';
-import { DatabaseInfo } from '../types';
-import { Database, Search, Download } from 'lucide-react';
-import { Button } from './ui/button';
+import { useState, useEffect } from 'react';
+import { Database as DatabaseIcon, Download, User, FileText } from 'lucide-react';
+import { Database, Container, Server } from '@/types/api';
+import { apiService } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Separator } from '@/components/ui/separator';
+import { DownloadDialog } from './DownloadDialog';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface DatabaseGridProps {
-  databases: DatabaseInfo[];
-  isLoading: boolean;
-  onDownload: (dbName: string) => void;
-  disabled?: boolean;
+  server: Server;
+  container: Container;
 }
 
-export const DatabaseGrid = ({ databases, isLoading, onDownload, disabled = false }: DatabaseGridProps) => {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDb, setSelectedDb] = useState<string | null>(null);
+export function DatabaseGrid({ server, container }: DatabaseGridProps) {
+  const [databases, setDatabases] = useState<Database[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
+  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const filteredDatabases = databases.filter(db =>
-    db.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  useEffect(() => {
+    const fetchDatabases = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const databaseList = await apiService.getDatabases(server.id, container.id);
+        setDatabases(databaseList);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to fetch databases. Please check your connection.';
+        setError(message);
+        toast({
+          title: 'Error',
+          description: message,
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDatabases();
+  }, [server.id, container.id, toast]);
+
+  const handleRetry = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const databaseList = await apiService.getDatabases(server.id, container.id);
+      setDatabases(databaseList);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch databases. Please check your connection.';
+      setError(message);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownloadClick = (database: Database) => {
+    setSelectedDatabase(database);
+    setIsDownloadDialogOpen(true);
+  };
 
   if (isLoading) {
     return (
-      <div className="glass rounded-xl p-6">
-        <div className="flex items-center gap-2 mb-4">
-          <Database className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Databases</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="glass-subtle rounded-lg p-4 animate-pulse">
-              <div className="h-4 bg-muted rounded w-3/4 mb-2"></div>
-              <div className="h-3 bg-muted rounded w-1/2"></div>
-            </div>
-          ))}
-        </div>
-      </div>
+      <Card className="shadow-medium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DatabaseIcon className="h-5 w-5" />
+            Databases
+          </CardTitle>
+          <CardDescription>
+            Databases in {container.name}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-40 w-full" />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="shadow-medium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DatabaseIcon className="h-5 w-5" />
+            Databases
+          </CardTitle>
+          <CardDescription>Databases in {container.name}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            <Alert variant="destructive">
+              <AlertTitle>Failed to load databases</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+            <Button onClick={handleRetry} variant="outline">Retry</Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (databases.length === 0) {
+    return (
+      <Card className="shadow-medium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DatabaseIcon className="h-5 w-5" />
+            Databases
+          </CardTitle>
+          <CardDescription>
+            No databases found in {container.name}
+          </CardDescription>
+        </CardHeader>
+      </Card>
     );
   }
 
   return (
-    <div className="glass rounded-xl p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Database className="h-5 w-5 text-primary" />
-          <h2 className="text-lg font-semibold">Databases</h2>
-          <span className="text-sm text-muted-foreground">
-            ({filteredDatabases.length})
-          </span>
-        </div>
+    <>
+      <Card className="shadow-medium">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <DatabaseIcon className="h-5 w-5 text-primary" />
+            Databases
+          </CardTitle>
+          <CardDescription>
+            Found {databases.length} database{databases.length !== 1 ? 's' : ''} in {container.name}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {databases.map((database) => (
+              <Card
+                key={database.name}
+                className="transition-all duration-normal hover:shadow-glow hover:scale-105"
+              >
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DatabaseIcon className="h-4 w-4 text-primary" />
+                    {database.name}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <User className="h-4 w-4" />
+                      <span className="font-medium">Owner:</span> {database.owner}
+                    </div>
+                    
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      <span className="font-medium">Encoding:</span>
+                      <Badge variant="secondary" className="text-xs">
+                        {database.encoding}
+                      </Badge>
+                    </div>
 
-        {databases.length > 0 && (
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              placeholder="Search databases..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 glass-subtle rounded-lg border-0 bg-transparent text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:outline-none transition-smooth"
-            />
-          </div>
-        )}
-      </div>
+                    {database.size && (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-medium">Size:</span> {database.size}
+                      </div>
+                    )}
 
-      {disabled ? (
-        <div className="text-center py-8">
-          <Database className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">Select a Container</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            Choose a container to view available databases
-          </p>
-        </div>
-      ) : databases.length === 0 ? (
-        <div className="text-center py-8">
-          <Database className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No databases found</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            No databases available for the selected container
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredDatabases.map((db) => (
-            <div
-              key={db.name}
-              className={`glass-subtle rounded-lg p-4 hover:bg-secondary/10 transition-smooth cursor-pointer border ${
-                selectedDb === db.name ? 'border-primary' : 'border-transparent'
-              }`}
-              onClick={() => setSelectedDb(selectedDb === db.name ? null : db.name)}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Database className="h-4 w-4 text-primary" />
-                    <h3 className="font-medium text-foreground truncate">
-                      {db.name}
-                    </h3>
+                    <Separator />
+
+                    <Button
+                      onClick={() => handleDownloadClick(database)}
+                      className="w-full transition-all duration-fast"
+                      variant="outline"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Download Dump
+                    </Button>
                   </div>
-                  {db.size && (
-                    <p className="text-sm text-muted-foreground">Size: {db.size}</p>
-                  )}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
-              {selectedDb === db.name && (
-                <div className="mt-4 pt-4 border-t border-glass-border">
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDownload(db.name);
-                    }}
-                    className="w-full bg-gradient-primary hover:opacity-90 transition-smooth"
-                    size="sm"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download Dump
-                  </Button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+      {selectedDatabase && (
+        <DownloadDialog
+          isOpen={isDownloadDialogOpen}
+          onClose={() => {
+            setIsDownloadDialogOpen(false);
+            setSelectedDatabase(null);
+          }}
+          server={server}
+          container={container}
+          database={selectedDatabase}
+        />
       )}
-
-      {databases.length > 0 && filteredDatabases.length === 0 && (
-        <div className="text-center py-8">
-          <Search className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-          <p className="text-muted-foreground">No databases match your search</p>
-        </div>
-      )}
-    </div>
+    </>
   );
-};
+}

@@ -1,170 +1,126 @@
 package services
 
 import (
-    "fmt"
-    "io"
-    "net"
-    "os"
-    "time"
+	"fmt"
+	"os/exec"
+	"time"
 
-    "golang.org/x/crypto/ssh"
-    "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
+	"golang.org/x/crypto/ssh"
+    "backend/internal/config"
 )
 
-// SSHService handles SSH connections
+// SSHConfig represents SSH connection configuration
+type SSHConfig struct {
+	Host       string
+	Port       int
+	Username   string
+	Password   string
+	PrivateKey string
+}
+
+// SSHService handles SSH operations
 type SSHService struct {
-    logger *logrus.Logger
+	logger *logrus.Logger
 }
 
 // NewSSHService creates a new SSH service
 func NewSSHService(logger *logrus.Logger) *SSHService {
-    return &SSHService{
-        logger: logger,
-    }
+	return &SSHService{
+		logger: logger,
+	}
 }
 
-// SSHConfig represents SSH connection configuration
-type SSHConfig struct {
-    Host       string
-    Port       int
-    Username   string
-    Password   string
-    PrivateKey string
-}
-
-// Connect establishes an SSH connection
-func (s *SSHService) Connect(config SSHConfig) (*ssh.Client, error) {
-    // Build SSH client configuration
-    sshConfig := &ssh.ClientConfig{
-        User:            config.Username,
-        HostKeyCallback: ssh.InsecureIgnoreHostKey(), // Note: In production, use proper host key verification
-        Timeout:         30 * time.Second,
-    }
-
-    // Add authentication methods
-    if config.Password != "" {
-        sshConfig.Auth = append(sshConfig.Auth, ssh.Password(config.Password))
-    }
-
-    if config.PrivateKey != "" {
-        key, err := s.loadPrivateKey(config.PrivateKey)
-        if err != nil {
-            return nil, fmt.Errorf("failed to load private key: %w", err)
-        }
-        sshConfig.Auth = append(sshConfig.Auth, ssh.PublicKeys(key))
-    }
-
-    // Connect to SSH server
-    addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-    client, err := ssh.Dial("tcp", addr, sshConfig)
-    if err != nil {
-        return nil, fmt.Errorf("failed to connect to SSH server: %w", err)
-    }
-
-    s.logger.Infof("Successfully connected to SSH server %s", addr)
-    return client, nil
-}
-
-// loadPrivateKey loads a private key from file or string
-func (s *SSHService) loadPrivateKey(keyPath string) (ssh.Signer, error) {
-    var keyData []byte
-    var err error
-
-    // Check if it's a file path or key content
-    if _, err := os.Stat(keyPath); err == nil {
-        // It's a file path
-        keyData, err = os.ReadFile(keyPath)
-        if err != nil {
-            return nil, fmt.Errorf("failed to read private key file: %w", err)
-        }
+// ExecuteRemoteCommand executes a command on a remote server using system SSH
+func (s *SSHService) ExecuteRemoteCommand(serverConfig *config.Server, command string) (string, error) {
+    // Build SSH connection string with username
+    var sshTarget string
+    if serverConfig.Username != "" {
+        sshTarget = fmt.Sprintf("%s@%s", serverConfig.Username, serverConfig.Host)
     } else {
-        // Treat as key content
-        keyData = []byte(keyPath)
+        sshTarget = serverConfig.Host
     }
-
-    // Parse the private key
-    key, err := ssh.ParsePrivateKey(keyData)
+    
+    s.logger.Infof("Executing command on %s: %s", sshTarget, command)
+    
+    // Build SSH command with private key
+    var cmd *exec.Cmd
+    if serverConfig.PrivateKey != "" {
+        // Use private key for authentication
+        cmd = exec.Command("ssh", "-i", serverConfig.PrivateKey, "-o", "StrictHostKeyChecking=no", sshTarget, command)
+    } else {
+        // Use default SSH authentication
+        cmd = exec.Command("ssh", "-o", "StrictHostKeyChecking=no", sshTarget, command)
+    }
+    
+    output, err := cmd.CombinedOutput()
     if err != nil {
-        return nil, fmt.Errorf("failed to parse private key: %w", err)
+        s.logger.Errorf("SSH command failed on %s: %v\nOutput: %s", sshTarget, err, string(output))
+        return "", fmt.Errorf("SSH command failed: %w\nOutput: %s", err, string(output))
     }
-
-    return key, nil
-}
-
-// ExecuteCommand executes a command over SSH
-func (s *SSHService) ExecuteCommand(client *ssh.Client, command string) (string, error) {
-    session, err := client.NewSession()
-    if err != nil {
-        return "", fmt.Errorf("failed to create SSH session: %w", err)
-    }
-    defer session.Close()
-
-    output, err := session.CombinedOutput(command)
-    if err != nil {
-        return "", fmt.Errorf("failed to execute command: %w", err)
-    }
-
+    
+    s.logger.Debugf("Command output from %s: %s", sshTarget, string(output))
     return string(output), nil
 }
 
-// TestConnection tests SSH connection
+
+
+// ExecuteCommand executes a command over SSH (keeping for backward compatibility)
+func (s *SSHService) ExecuteCommand(client *ssh.Client, command string) (string, error) {
+	session, err := client.NewSession()
+	if err != nil {
+		return "", fmt.Errorf("failed to create SSH session: %w", err)
+	}
+	defer session.Close()
+
+	output, err := session.CombinedOutput(command)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	return string(output), nil
+}
+
+// TestConnection tests SSH connection to a server
 func (s *SSHService) TestConnection(config SSHConfig) error {
-    client, err := s.Connect(config)
-    if err != nil {
-        return err
-    }
-    defer client.Close()
-
-    // Test with a simple command
-    _, err = s.ExecuteCommand(client, "echo 'SSH connection test successful'")
-    return err
+	// Simple test using system ssh
+	cmd := exec.Command("ssh", "-o", "ConnectTimeout=10", config.Host, "echo 'test'")
+	_, err := cmd.CombinedOutput()
+	return err
 }
 
-// CreateTunnel creates an SSH tunnel for Docker API access
-func (s *SSHService) CreateTunnel(client *ssh.Client, localPort int, remoteHost string, remotePort int) (net.Listener, error) {
-    // Listen on local port
-    localAddr := fmt.Sprintf("localhost:%d", localPort)
-    listener, err := net.Listen("tcp", localAddr)
-    if err != nil {
-        return nil, fmt.Errorf("failed to listen on local port: %w", err)
-    }
+// createSSHClient creates an SSH client from SSHConfig (if needed for other operations)
+func (s *SSHService) createSSHClient(config SSHConfig) (*ssh.Client, error) {
+	var auth []ssh.AuthMethod
 
-    remoteAddr := fmt.Sprintf("%s:%d", remoteHost, remotePort)
-    
-    go func() {
-        for {
-            // Accept local connections
-            localConn, err := listener.Accept()
-            if err != nil {
-                s.logger.Errorf("Failed to accept local connection: %v", err)
-                return
-            }
+	// Use private key if provided
+	if config.PrivateKey != "" {
+		key, err := ssh.ParsePrivateKey([]byte(config.PrivateKey))
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+		auth = append(auth, ssh.PublicKeys(key))
+	}
 
-            // Create remote connection through SSH
-            remoteConn, err := client.Dial("tcp", remoteAddr)
-            if err != nil {
-                s.logger.Errorf("Failed to dial remote address: %v", err)
-                localConn.Close()
-                continue
-            }
+	// Use password if provided
+	if config.Password != "" {
+		auth = append(auth, ssh.Password(config.Password))
+	}
 
-            // Start copying data between connections
-            go s.copyConn(localConn, remoteConn)
-            go s.copyConn(remoteConn, localConn)
-        }
-    }()
+	// SSH client configuration
+	sshConfig := &ssh.ClientConfig{
+		User:            config.Username,
+		Auth:            auth,
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // In production, use proper host key verification
+		Timeout:         30 * time.Second,
+	}
 
-    s.logger.Infof("SSH tunnel created: %s -> %s", localAddr, remoteAddr)
-    return listener, nil
-}
+	// Connect to the remote server
+	address := fmt.Sprintf("%s:%d", config.Host, config.Port)
+	client, err := ssh.Dial("tcp", address, sshConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to %s: %w", address, err)
+	}
 
-// copyConn copies data between two connections
-func (s *SSHService) copyConn(dst, src net.Conn) {
-    defer dst.Close()
-    defer src.Close()
-    
-    _, err := io.Copy(dst, src)
-    if err != nil {
-        s.logger.Debugf("Connection copy ended: %v", err)
-    }
+	return client, nil
 }

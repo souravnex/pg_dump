@@ -1,99 +1,98 @@
-import { API_CONFIG, API_TIMEOUT } from '@/config/api.config';
-import { Server, Container, Database, ServersResponse, ContainersResponse, DatabasesResponse, ErrorResponse } from '@/types';
+import { Server, Container, Database, DumpOptions, ApiResponse, HealthCheck } from '@/types/api';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
 class ApiService {
-  private baseUrl: string;
-
-  constructor() {
-    this.baseUrl = API_CONFIG.BASE_URL;
-  }
-
-  private async fetchWithTimeout(url: string, options: RequestInit = {}): Promise<Response> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT);
-
+  private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         headers: {
           'Content-Type': 'application/json',
-          ...options.headers,
+          ...options?.headers,
         },
+        ...options,
       });
-      
-      clearTimeout(timeoutId);
-      return response;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
-  }
 
-  private async handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-      
-      try {
-        const errorData: ErrorResponse = await response.json();
-        errorMessage = errorData.message || errorData.error || errorMessage;
-      } catch {
-        // Use default error message if JSON parsing fails
+      const contentType = response.headers.get('content-type') || '';
+
+      if (!response.ok) {
+        let errorMessage = `HTTP error ${response.status}`;
+        try {
+          if (contentType.includes('application/json')) {
+            const errJson = await response.json();
+            errorMessage = errJson.message || JSON.stringify(errJson);
+          } else {
+            const errText = await response.text();
+            errorMessage = errText || errorMessage;
+          }
+        } catch (_) {
+          // ignore parse errors
+        }
+        throw new Error(errorMessage);
       }
-      
-      throw new Error(errorMessage);
+
+      if (contentType.includes('application/json')) {
+        return await response.json();
+      }
+
+      // @ts-expect-error - allow non-JSON in special cases handled by callers
+      return await response.text();
+    } catch (error) {
+      console.error(`API request failed: ${endpoint}`, error);
+      throw error instanceof Error ? error : new Error('Unknown API error');
     }
-
-    return response.json();
   }
 
-  async healthCheck(): Promise<{ status: string }> {
-    const response = await this.fetchWithTimeout(`${this.baseUrl}${API_CONFIG.ENDPOINTS.HEALTH}`);
-    return this.handleResponse(response);
+  async healthCheck(): Promise<HealthCheck> {
+    return this.request<HealthCheck>('/health');
   }
 
-  async getServers(): Promise<ServersResponse> {
-    const response = await this.fetchWithTimeout(`${this.baseUrl}${API_CONFIG.ENDPOINTS.SERVERS}`);
-    return this.handleResponse(response);
+  async getServers(): Promise<Server[]> {
+    const res = await this.request<any>('/api/v1/servers');
+    if (Array.isArray(res)) return res as Server[];
+    if (res && Array.isArray(res.servers)) return res.servers as Server[];
+    // Some backends wrap data differently
+    if (res && res.data && Array.isArray(res.data.servers)) return res.data.servers as Server[];
+    throw new Error('Unexpected servers response shape');
   }
 
-  async getContainers(serverId: string): Promise<ContainersResponse> {
-    const url = `${this.baseUrl}${API_CONFIG.ENDPOINTS.CONTAINERS.replace(':serverID', serverId)}`;
-    const response = await this.fetchWithTimeout(url);
-    return this.handleResponse(response);
+  async getContainers(serverId: string): Promise<Container[]> {
+    const res = await this.request<any>(`/api/v1/servers/${serverId}/containers`);
+    if (Array.isArray(res)) return res as Container[];
+    if (res && Array.isArray(res.containers)) return res.containers as Container[];
+    if (res && res.data && Array.isArray(res.data.containers)) return res.data.containers as Container[];
+    throw new Error('Unexpected containers response shape');
   }
 
-  async getDatabases(serverId: string, containerId: string): Promise<DatabasesResponse> {
-    const url = `${this.baseUrl}${API_CONFIG.ENDPOINTS.DATABASES
-      .replace(':serverID', serverId)
-      .replace(':containerID', containerId)}`;
-    const response = await this.fetchWithTimeout(url);
-    return this.handleResponse(response);
+  async getDatabases(serverId: string, containerId: string): Promise<Database[]> {
+    const res = await this.request<any>(`/api/v1/servers/${serverId}/containers/${containerId}/databases`);
+    if (Array.isArray(res)) return res as Database[];
+    if (res && Array.isArray(res.databases)) return res.databases as Database[];
+    if (res && res.data && Array.isArray(res.data.databases)) return res.data.databases as Database[];
+    throw new Error('Unexpected databases response shape');
   }
 
   async downloadDump(
-    serverId: string, 
-    containerId: string, 
-    dbName: string, 
-    options?: { data_only?: boolean; schema_only?: boolean }
+    serverId: string,
+    containerId: string,
+    dbName: string,
+    options?: DumpOptions
   ): Promise<Blob> {
-    const baseUrl = `${this.baseUrl}${API_CONFIG.ENDPOINTS.DUMP
-      .replace(':serverID', serverId)
-      .replace(':containerID', containerId)
-      .replace(':dbName', dbName)}`;
-    
     const params = new URLSearchParams();
-    if (options?.data_only) params.append('data_only', 'true');
-    if (options?.schema_only) params.append('schema_only', 'true');
-    
-    const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
-    
-    const response = await this.fetchWithTimeout(url, {
-      method: 'GET',
-    });
+    if (options?.dataOnly) params.append('data_only', 'true');
+    if (options?.schemaOnly) params.append('schema_only', 'true');
 
+    const queryString = params.toString();
+    const endpoint = `/api/v1/servers/${serverId}/containers/${containerId}/databases/${dbName}/dump${queryString ? `?${queryString}` : ''}`;
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`);
     if (!response.ok) {
-      throw new Error(`Failed to download dump: ${response.statusText}`);
+      let message = `Download failed: ${response.status}`;
+      try {
+        const text = await response.text();
+        if (text) message = text;
+      } catch (_) {}
+      throw new Error(message);
     }
 
     return response.blob();
