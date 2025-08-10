@@ -27,6 +27,8 @@ export interface Database {
 export interface DumpOptions {
   dataOnly?: boolean;
   schemaOnly?: boolean;
+  type?: 'full' | 'schema' | 'data';
+  fileName?: string;
 }
 
 export interface ApiResponse<T = any> {
@@ -41,7 +43,7 @@ export interface HealthCheck {
   uptime?: number;
 }
 
-// Response interfaces (you can also define these here if you prefer)
+// Response interfaces
 export interface ServerListResponse {
   servers: Server[];
   total: number;

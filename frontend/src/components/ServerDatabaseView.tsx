@@ -95,27 +95,13 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
     fetchContainerDatabases();
   }, [selectedContainer, server.id, toast]);
 
-  // ADD MISSING HANDLER FUNCTIONS
   const handleContainerSelect = (container: Container) => {
     setSelectedContainer(container);
   };
 
   const handleContainerDatabaseDownload = async (dbName: string, options?: any) => {
-    if (!selectedContainer) return;
-    
-    try {
-      await apiService.downloadDump(server.id, selectedContainer.id, dbName, options);
-      toast({
-        title: 'Download started',
-        description: `Downloading ${dbName} from container ${selectedContainer.name}`,
-      });
-    } catch (err) {
-      toast({
-        title: 'Download failed',
-        description: err instanceof Error ? err.message : 'Failed to download database',
-        variant: 'destructive',
-      });
-    }
+    // This function is no longer needed since DownloadDialog handles it internally
+    console.log('Download handled by DownloadDialog component');
   };
 
   const handleHostDatabaseDownload = async (dbName: string, options?: any) => {
@@ -311,6 +297,8 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                   onDownload={handleContainerDatabaseDownload}
                   sourceType="container"
                   containerName={selectedContainer.name}
+                  server={server}
+                  container={selectedContainer}
                 />
               </CardContent>
             </Card>
@@ -333,6 +321,8 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                 onDownload={handleContainerDatabaseDownload}
                 sourceType="container"
                 containerName={selectedContainer.name}
+                server={server}
+                container={selectedContainer}
               />
             )}
           </div>
@@ -345,6 +335,7 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
             isLoading={isLoadingHost}
             onDownload={handleHostDatabaseDownload}
             serverName={server.name}
+            server={server}
           />
         </TabsContent>
       </Tabs>

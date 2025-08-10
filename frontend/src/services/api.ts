@@ -1,24 +1,12 @@
-import { Server, Container, Database, DumpOptions } from '@/types/api';
-
-// Define the response interfaces here since they're missing
-interface ServerListResponse {
-  servers: Server[];
-  total: number;
-}
-
-interface ContainerListResponse {
-  containers: Container[];
-  server_id: string;
-  total: number;
-}
-
-interface DatabaseListResponse {
-  databases: Database[];
-  server_id: string;
-  container_id?: string;
-  type?: string;
-  total: number;
-}
+import { 
+  Server, 
+  Container, 
+  Database, 
+  DumpOptions, 
+  ServerListResponse,
+  ContainerListResponse,
+  DatabaseListResponse 
+} from '@/types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -44,7 +32,7 @@ class ApiService {
     return response.json();
   }
 
-  private async downloadFile(endpoint: string, filename: string): Promise<void> {
+  async downloadFile(endpoint: string, filename?: string): Promise<Blob> {
     const url = `${this.baseURL}${endpoint}`;
     
     const response = await fetch(url);
@@ -53,16 +41,19 @@ class ApiService {
     }
 
     const blob = await response.blob();
-    const downloadUrl = window.URL.createObjectURL(blob);
     
-    const link = document.createElement('a');
-    link.href = downloadUrl;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
+    if (filename) {
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+    }
     
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(downloadUrl);
+    return blob;
   }
 
   async getServers(): Promise<Server[]> {
@@ -80,18 +71,17 @@ class ApiService {
     return response.databases;
   }
 
-  async downloadDump(serverId: string, containerId: string, dbName: string, options?: DumpOptions): Promise<void> {
+  async downloadDump(serverId: string, containerId: string, dbName: string, options?: DumpOptions): Promise<Blob> {
     const params = new URLSearchParams();
-    if (options?.dataOnly) params.append('data_only', 'true');
     if (options?.schemaOnly) params.append('schema_only', 'true');
+    if (options?.dataOnly) params.append('data_only', 'true');
     
     const queryString = params.toString();
     const url = `/servers/${serverId}/containers/${containerId}/databases/${dbName}/dump${queryString ? `?${queryString}` : ''}`;
     
-    await this.downloadFile(url, `${serverId}_${containerId}_${dbName}.sql`);
+    return this.downloadFile(url);
   }
 
-  // Host database methods
   async getHostDatabases(serverId: string): Promise<Database[]> {
     const response = await this.request<DatabaseListResponse>(`/servers/${serverId}/host/databases`);
     return response.databases;
@@ -99,18 +89,16 @@ class ApiService {
 
   async downloadHostDump(serverId: string, dbName: string, options?: DumpOptions): Promise<void> {
     const params = new URLSearchParams();
-    if (options?.dataOnly) params.append('data_only', 'true');
     if (options?.schemaOnly) params.append('schema_only', 'true');
+    if (options?.dataOnly) params.append('data_only', 'true');
     
     const queryString = params.toString();
     const url = `/servers/${serverId}/host/databases/${dbName}/dump${queryString ? `?${queryString}` : ''}`;
     
-    await this.downloadFile(url, `${serverId}_host_${dbName}.sql`);
+    const filename = options?.fileName || `${dbName}_host.sql`;
+    await this.downloadFile(url, filename);
   }
 }
 
-// Export singleton instance
 export const apiService = new ApiService();
-
-// Re-export types for convenience
 export type { Server, Container, Database, DumpOptions } from '@/types/api';

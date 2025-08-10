@@ -1,5 +1,6 @@
-import { Database } from '@/types/api';
-import { Database as DatabaseIcon, Download, Server } from 'lucide-react';
+import { useState } from 'react';
+import { Database, Server } from '@/types/api';
+import { Database as DatabaseIcon, Download, Server as ServerIcon } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -10,21 +11,49 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { apiService } from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
 
 interface HostDatabaseGridProps {
   databases: Database[];
   isLoading: boolean;
   onDownload: (dbName: string, options?: any) => void;
   serverName: string;
+  server: Server;
 }
 
-export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName }: HostDatabaseGridProps) {
+export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName, server }: HostDatabaseGridProps) {
+  const { toast } = useToast();
+
+  const handleDirectDownload = async (database: Database) => {
+    try {
+      // Generate filename with timestamp
+      const now = new Date();
+      const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `${database.name}_${timestamp}.sql`;
+
+      // Download directly without modal for host databases
+      await apiService.downloadHostDump(server.id, database.name, { fileName: filename });
+      
+      toast({
+        title: 'Download started',
+        description: `Downloading ${database.name} from host PostgreSQL`,
+      });
+    } catch (err) {
+      toast({
+        title: 'Download failed',
+        description: err instanceof Error ? err.message : 'Failed to download host database',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5 text-green-600" />
+            <ServerIcon className="h-5 w-5 text-green-600" />
             Host PostgreSQL Databases
           </CardTitle>
           <CardDescription>Loading databases from host PostgreSQL...</CardDescription>
@@ -45,14 +74,14 @@ export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5 text-green-600" />
+            <ServerIcon className="h-5 w-5 text-green-600" />
             Host PostgreSQL Databases
           </CardTitle>
           <CardDescription>No host PostgreSQL installation found on {serverName}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8">
-            <Server className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <ServerIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">
               PostgreSQL is not installed on the host system or not accessible.
             </p>
@@ -66,7 +95,7 @@ export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName 
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Server className="h-5 w-5 text-green-600" />
+          <ServerIcon className="h-5 w-5 text-green-600" />
           Host PostgreSQL Databases
         </CardTitle>
         <CardDescription>
@@ -101,7 +130,7 @@ export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName 
                   </div>
                   <div className="pt-2">
                     <Button
-                      onClick={() => onDownload(database.name)}
+                      onClick={() => handleDirectDownload(database)}
                       size="sm"
                       className="w-full"
                       variant="outline"

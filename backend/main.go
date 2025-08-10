@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -66,8 +67,12 @@ func main() {
 
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "healthy"})
-	})
+    c.JSON(200, gin.H{
+        "status": "healthy",
+        "timestamp": time.Now().Unix(),
+        "service": "postgres-manager-backend",
+    })
+})
 
 	// Start server
 	port := os.Getenv("PORT")

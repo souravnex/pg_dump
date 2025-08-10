@@ -1,4 +1,5 @@
-import { Database } from '@/types/api';
+import { useState } from 'react';
+import { Database, Container, Server } from '@/types/api';
 import { Database as DatabaseIcon, Download } from 'lucide-react';
 import {
   Card,
@@ -10,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DownloadDialog } from '@/components/DownloadDialog';
 
 interface DatabaseGridProps {
   databases: Database[];
@@ -17,6 +19,8 @@ interface DatabaseGridProps {
   onDownload: (dbName: string, options?: any) => Promise<void>;
   sourceType: string;
   containerName?: string;
+  server: Server;
+  container: Container;
 }
 
 export function DatabaseGrid({ 
@@ -24,8 +28,23 @@ export function DatabaseGrid({
   isLoading, 
   onDownload, 
   sourceType, 
-  containerName 
+  containerName,
+  server,
+  container
 }: DatabaseGridProps) {
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
+
+  const handleDownloadClick = (database: Database) => {
+    setSelectedDatabase(database);
+    setShowDownloadDialog(true);
+  };
+
+  const handleDownloadClose = () => {
+    setShowDownloadDialog(false);
+    setSelectedDatabase(null);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -74,46 +93,58 @@ export function DatabaseGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {databases.map((database) => (
-        <Card key={database.name} className="hover:shadow-md transition-shadow">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base flex items-center gap-2">
-                <DatabaseIcon className="h-4 w-4 text-blue-600" />
-                {database.name}
-              </CardTitle>
-              <Badge variant="outline" className="text-blue-600 border-blue-600">
-                {sourceType === 'container' ? 'Container' : 'Database'}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <div className="space-y-2">
-              <div className="text-sm text-muted-foreground">
-                <span className="font-medium">Owner:</span> {database.owner}
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {databases.map((database) => (
+          <Card key={database.name} className="hover:shadow-md transition-shadow">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DatabaseIcon className="h-4 w-4 text-blue-600" />
+                  {database.name}
+                </CardTitle>
+                <Badge variant="outline" className="text-blue-600 border-blue-600">
+                  {sourceType === 'container' ? 'Container' : 'Database'}
+                </Badge>
               </div>
-              <div className="text-sm text-muted-foreground">
-                <span className="font-medium">Encoding:</span> {database.encoding}
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2">
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">Owner:</span> {database.owner}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">Encoding:</span> {database.encoding}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">Size:</span> {database.size}
+                </div>
+                <div className="pt-2">
+                  <Button
+                    onClick={() => handleDownloadClick(database)}
+                    size="sm"
+                    className="w-full"
+                    variant="outline"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Dump
+                  </Button>
+                </div>
               </div>
-              <div className="text-sm text-muted-foreground">
-                <span className="font-medium">Size:</span> {database.size}
-              </div>
-              <div className="pt-2">
-                <Button
-                  onClick={() => onDownload(database.name)}
-                  size="sm"
-                  className="w-full"
-                  variant="outline"
-                >
-                  <Download className="h-4 w-4 mr-2" />
-                  Download Dump
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {selectedDatabase && (
+        <DownloadDialog
+          isOpen={showDownloadDialog}
+          onClose={handleDownloadClose}
+          server={server}
+          container={container}
+          database={selectedDatabase}
+        />
+      )}
+    </>
   );
 }
