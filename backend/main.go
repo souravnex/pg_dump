@@ -78,8 +78,7 @@ func main() {
     }
 
     logger.Infof("Starting server on port %s", port)
-    if err := r.Run(":" + port); err != nil {
+    if err := r.Run("0.0.0.0:" + port); err != nil {
         logger.Fatalf("Failed to start server: %v", err)
     }
 }
-
