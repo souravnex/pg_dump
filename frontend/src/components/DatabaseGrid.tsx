@@ -1,8 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Database as DatabaseIcon, Download, User, FileText } from 'lucide-react';
-import { Database, Container, Server } from '@/types/api';
-import { apiService } from '@/services/api';
-import { useToast } from '@/hooks/use-toast';
+import { Database } from '@/types/api';
+import { Database as DatabaseIcon, Download } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -13,106 +10,39 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Separator } from '@/components/ui/separator';
-import { DownloadDialog } from './DownloadDialog';
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface DatabaseGridProps {
-  server: Server;
-  container: Container;
+  databases: Database[];
+  isLoading: boolean;
+  onDownload: (dbName: string, options?: any) => Promise<void>;
+  sourceType: string;
+  containerName?: string;
 }
 
-export function DatabaseGrid({ server, container }: DatabaseGridProps) {
-  const [databases, setDatabases] = useState<Database[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
-  const [isDownloadDialogOpen, setIsDownloadDialogOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { toast } = useToast();
-
-  useEffect(() => {
-    const fetchDatabases = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        const databaseList = await apiService.getDatabases(server.id, container.id);
-        setDatabases(databaseList);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch databases. Please check your connection.';
-        setError(message);
-        toast({
-          title: 'Error',
-          description: message,
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchDatabases();
-  }, [server.id, container.id, toast]);
-
-  const handleRetry = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const databaseList = await apiService.getDatabases(server.id, container.id);
-      setDatabases(databaseList);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch databases. Please check your connection.';
-      setError(message);
-      toast({ title: 'Error', description: message, variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDownloadClick = (database: Database) => {
-    setSelectedDatabase(database);
-    setIsDownloadDialogOpen(true);
-  };
-
+export function DatabaseGrid({ 
+  databases, 
+  isLoading, 
+  onDownload, 
+  sourceType, 
+  containerName 
+}: DatabaseGridProps) {
   if (isLoading) {
     return (
-      <Card className="shadow-medium">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <DatabaseIcon className="h-5 w-5" />
-            Databases
+            <DatabaseIcon className="h-5 w-5 text-blue-600" />
+            {sourceType === 'container' ? 'Container Databases' : 'Databases'}
           </CardTitle>
           <CardDescription>
-            Databases in {container.name}
+            {containerName ? `Loading databases from ${containerName}...` : 'Loading databases...'}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 w-full" />
+              <Skeleton key={i} className="h-32 w-full" />
             ))}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (error) {
-    return (
-      <Card className="shadow-medium">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DatabaseIcon className="h-5 w-5" />
-            Databases
-          </CardTitle>
-          <CardDescription>Databases in {container.name}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <Alert variant="destructive">
-              <AlertTitle>Failed to load databases</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-            <Button onClick={handleRetry} variant="outline">Retry</Button>
           </div>
         </CardContent>
       </Card>
@@ -121,96 +51,69 @@ export function DatabaseGrid({ server, container }: DatabaseGridProps) {
 
   if (databases.length === 0) {
     return (
-      <Card className="shadow-medium">
+      <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <DatabaseIcon className="h-5 w-5" />
-            Databases
+            <DatabaseIcon className="h-5 w-5 text-blue-600" />
+            {sourceType === 'container' ? 'Container Databases' : 'Databases'}
           </CardTitle>
           <CardDescription>
-            No databases found in {container.name}
+            {containerName ? `No databases found in ${containerName}` : 'No databases found'}
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className="text-center py-8">
+            <DatabaseIcon className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <p className="text-muted-foreground">
+              No databases found in this {sourceType}.
+            </p>
+          </div>
+        </CardContent>
       </Card>
     );
   }
 
   return (
-    <>
-      <Card className="shadow-medium">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DatabaseIcon className="h-5 w-5 text-primary" />
-            Databases
-          </CardTitle>
-          <CardDescription>
-            Found {databases.length} database{databases.length !== 1 ? 's' : ''} in {container.name}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {databases.map((database) => (
-              <Card
-                key={database.name}
-                className="transition-all duration-normal hover:shadow-glow hover:scale-105"
-              >
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <DatabaseIcon className="h-4 w-4 text-primary" />
-                    {database.name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <User className="h-4 w-4" />
-                      <span className="font-medium">Owner:</span> {database.owner}
-                    </div>
-                    
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <FileText className="h-4 w-4" />
-                      <span className="font-medium">Encoding:</span>
-                      <Badge variant="secondary" className="text-xs">
-                        {database.encoding}
-                      </Badge>
-                    </div>
-
-                    {database.size && (
-                      <div className="text-sm text-muted-foreground">
-                        <span className="font-medium">Size:</span> {database.size}
-                      </div>
-                    )}
-
-                    <Separator />
-
-                    <Button
-                      onClick={() => handleDownloadClick(database)}
-                      className="w-full transition-all duration-fast"
-                      variant="outline"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Dump
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {selectedDatabase && (
-        <DownloadDialog
-          isOpen={isDownloadDialogOpen}
-          onClose={() => {
-            setIsDownloadDialogOpen(false);
-            setSelectedDatabase(null);
-          }}
-          server={server}
-          container={container}
-          database={selectedDatabase}
-        />
-      )}
-    </>
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {databases.map((database) => (
+        <Card key={database.name} className="hover:shadow-md transition-shadow">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <DatabaseIcon className="h-4 w-4 text-blue-600" />
+                {database.name}
+              </CardTitle>
+              <Badge variant="outline" className="text-blue-600 border-blue-600">
+                {sourceType === 'container' ? 'Container' : 'Database'}
+              </Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-2">
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium">Owner:</span> {database.owner}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium">Encoding:</span> {database.encoding}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium">Size:</span> {database.size}
+              </div>
+              <div className="pt-2">
+                <Button
+                  onClick={() => onDownload(database.name)}
+                  size="sm"
+                  className="w-full"
+                  variant="outline"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Dump
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   );
 }

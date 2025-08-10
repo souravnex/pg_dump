@@ -267,3 +267,116 @@ func (h *Handler) CheckServerStatus(c *gin.Context) {
 		"status":    "reachable",
 	})
 }
+
+// Add these new handler methods to your existing handlers.go file
+
+// GetHostDatabases returns databases from PostgreSQL installed on host
+func (h *Handler) GetHostDatabases(c *gin.Context) {
+	serverID := c.Param("serverID")
+	h.logger.Infof("Getting host databases for server: %s", serverID)
+
+	server, err := h.config.GetServerByID(serverID)
+	if err != nil {
+		h.logger.Errorf("Server not found: %v", err)
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error:   "Server not found",
+			Message: err.Error(),
+			Code:    http.StatusNotFound,
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Get host PostgreSQL databases
+	databases, err := h.postgresService.GetHostPostgreSQLDatabases(ctx, server, h.sshService)
+	if err != nil {
+		h.logger.Errorf("Failed to get host databases from %s: %v", server.Host, err)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to get host databases",
+			Message: fmt.Sprintf("Could not retrieve host databases from %s: %v", server.Host, err),
+			Code:    http.StatusInternalServerError,
+		})
+		return
+	}
+
+	// Ensure we return an empty array, not null
+	if databases == nil {
+		databases = []models.DatabaseResponse{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"databases": databases,
+		"server_id": serverID,
+		"type":      "host",
+		"total":     len(databases),
+	})
+}
+
+// DownloadHostDump creates and downloads a PostgreSQL database dump from host
+func (h *Handler) DownloadHostDump(c *gin.Context) {
+	serverID := c.Param("serverID")
+	dbName := c.Param("dbName")
+
+	server, err := h.config.GetServerByID(serverID)
+	if err != nil {
+		h.logger.Errorf("Server not found: %v", err)
+		c.JSON(http.StatusNotFound, models.ErrorResponse{
+			Error:   "Server not found",
+			Message: err.Error(),
+			Code:    http.StatusNotFound,
+		})
+		return
+	}
+
+	// Parse query parameters for dump options
+	options := make(map[string]interface{})
+	if dataOnly := c.Query("data_only"); dataOnly != "" {
+		if val, err := strconv.ParseBool(dataOnly); err == nil {
+			options["data_only"] = val
+		}
+	}
+	if schemaOnly := c.Query("schema_only"); schemaOnly != "" {
+		if val, err := strconv.ParseBool(schemaOnly); err == nil {
+			options["schema_only"] = val
+		}
+	}
+
+	ctx := context.Background()
+
+	h.logger.Infof("Creating host dump for database %s on server %s", dbName, serverID)
+
+	// Create dump stream via SSH
+	dumpReader, err := h.postgresService.CreateHostDumpViaSSH(ctx, server, dbName, options, h.sshService)
+	if err != nil {
+		h.logger.Errorf("Failed to create host dump: %v", err)
+		c.JSON(http.StatusInternalServerError, models.ErrorResponse{
+			Error:   "Failed to create host dump",
+			Message: err.Error(),
+			Code:    http.StatusInternalServerError,
+		})
+		return
+	}
+	defer dumpReader.Close()
+
+	// Set response headers for file download
+	filename := fmt.Sprintf("%s_host_%s.sql", serverID, dbName)
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+	c.Header("Content-Type", "application/sql")
+	c.Header("Content-Transfer-Encoding", "binary")
+
+	// Stream the dump to the client
+	c.Stream(func(w io.Writer) bool {
+		buffer := make([]byte, 4096)
+		n, err := dumpReader.Read(buffer)
+		if err != nil {
+			if err != io.EOF {
+				h.logger.Errorf("Error reading host dump: %v", err)
+			}
+			return false
+		}
+		_, err = w.Write(buffer[:n])
+		return err == nil
+	})
+}

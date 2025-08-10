@@ -3,8 +3,8 @@ export interface Server {
   name: string;
   host: string;
   port: number;
-  description?: string;
-  status: 'online' | 'offline' | 'pending' | 'unknown';
+  description: string;
+  status: string;
 }
 
 export interface Container {
@@ -13,6 +13,7 @@ export interface Container {
   image: string;
   status: 'running' | 'stopped' | 'paused' | 'restarting';
   ports: string[];
+  labels: Record<string, string>;
   created: string;
 }
 
@@ -20,7 +21,7 @@ export interface Database {
   name: string;
   owner: string;
   encoding: string;
-  size?: string;
+  size: string;
 }
 
 export interface DumpOptions {
@@ -28,13 +29,34 @@ export interface DumpOptions {
   schemaOnly?: boolean;
 }
 
-export interface ApiResponse<T> {
-  data: T;
-  success: boolean;
+export interface ApiResponse<T = any> {
+   T;
   message?: string;
+  success: boolean;
 }
 
 export interface HealthCheck {
   status: string;
   timestamp: string;
+  uptime?: number;
+}
+
+// Response interfaces (you can also define these here if you prefer)
+export interface ServerListResponse {
+  servers: Server[];
+  total: number;
+}
+
+export interface ContainerListResponse {
+  containers: Container[];
+  server_id: string;
+  total: number;
+}
+
+export interface DatabaseListResponse {
+  databases: Database[];
+  server_id: string;
+  container_id?: string;
+  type?: string;
+  total: number;
 }

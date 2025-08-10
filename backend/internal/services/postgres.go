@@ -354,3 +354,86 @@ func (s *PostgresService) parseDatabaseInfo(output string) (*models.DatabaseResp
 		Size:     strings.TrimSpace(parts[3]),
 	}, nil
 }
+
+
+// GetHostPostgreSQLDatabases gets databases from PostgreSQL installed on host
+func (s *PostgresService) GetHostPostgreSQLDatabases(ctx context.Context, server *config.Server, sshService *SSHService) ([]models.DatabaseResponse, error) {
+    s.logger.Infof("Getting host PostgreSQL databases from server %s", server.Host)
+
+    // For local servers
+    if server.Host == "localhost" || server.Host == "127.0.0.1" || server.Host == "" {
+        return s.getLocalHostDatabases(ctx)
+    }
+
+    // For remote servers, check if PostgreSQL is installed on host
+    postgresUser := server.PostgresUser
+    if postgresUser == "" {
+        postgresUser = "postgres"
+    }
+
+    // Command to list databases from host PostgreSQL
+    cmd := fmt.Sprintf(`sudo -u %s psql -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, postgresUser)
+
+    output, err := sshService.ExecuteRemoteCommand(server, cmd)
+    if err != nil {
+        // Try alternative methods if sudo doesn't work
+        cmd = fmt.Sprintf(`psql -U %s -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, postgresUser)
+        output, err = sshService.ExecuteRemoteCommand(server, cmd)
+        if err != nil {
+            return nil, fmt.Errorf("PostgreSQL not found on host or access denied: %w", err)
+        }
+    }
+
+    databases := s.parseDatabaseOutput(output)
+    s.logger.Infof("Found %d host databases on %s", len(databases), server.Host)
+    return databases, nil
+}
+
+// CreateHostDumpViaSSH creates a dump from host PostgreSQL
+func (s *PostgresService) CreateHostDumpViaSSH(ctx context.Context, server *config.Server, dbName string, options map[string]interface{}, sshService *SSHService) (io.ReadCloser, error) {
+    s.logger.Infof("Creating host dump for database %s on server %s", dbName, server.Host)
+
+    // Build host pg_dump command
+    dumpCmd := s.buildHostDumpCommand(server, dbName, options)
+
+    // For local servers
+    if server.Host == "localhost" || server.Host == "127.0.0.1" || server.Host == "" {
+        return s.createLocalDump(ctx, dumpCmd)
+    }
+
+    // For remote servers, create a streaming SSH command
+    return s.createRemoteDump(server, dumpCmd, sshService)
+}
+
+// buildHostDumpCommand builds pg_dump command for host PostgreSQL
+func (s *PostgresService) buildHostDumpCommand(server *config.Server, dbName string, options map[string]interface{}) string {
+    postgresUser := "postgres"
+    if server.PostgresUser != "" {
+        postgresUser = server.PostgresUser
+    }
+
+    // Host PostgreSQL command (no docker exec)
+    cmd := fmt.Sprintf("sudo -u %s pg_dump -d %s", postgresUser, dbName)
+
+    // Add dump options
+    if dataOnly, exists := options["data_only"]; exists && dataOnly.(bool) {
+        cmd += " --data-only"
+    }
+
+    if schemaOnly, exists := options["schema_only"]; exists && schemaOnly.(bool) {
+        cmd += " --schema-only"
+    }
+
+    s.logger.Infof("Built host dump command: %s", cmd)
+    return cmd
+}
+
+// getLocalHostDatabases handles local host PostgreSQL
+func (s *PostgresService) getLocalHostDatabases(ctx context.Context) ([]models.DatabaseResponse, error) {
+    cmd := exec.Command("psql", "-U", "postgres", "-tAc", "SELECT datname FROM pg_database WHERE datistemplate = false;")
+    output, err := cmd.CombinedOutput()
+    if err != nil {
+        return nil, fmt.Errorf("failed to get local host databases: %w", err)
+    }
+    return s.parseDatabaseOutput(string(output)), nil
+}

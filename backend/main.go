@@ -60,6 +60,8 @@ func main() {
 		api.GET("/servers/:serverID/containers", handler.GetContainers)
 		api.GET("/servers/:serverID/containers/:containerID/databases", handler.GetDatabases)
 		api.GET("/servers/:serverID/containers/:containerID/databases/:dbName/dump", handler.DownloadDump)
+		api.GET("/servers/:serverID/host/databases", handler.GetHostDatabases)
+    	api.GET("/servers/:serverID/host/databases/:dbName/dump", handler.DownloadHostDump)
 	}
 
 	// Health check endpoint

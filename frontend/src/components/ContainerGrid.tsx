@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Container as ContainerIcon, Play, Square, Pause, RotateCcw } from 'lucide-react';
+import { Database, Play, Square, Pause, RotateCcw } from 'lucide-react';
 import { Container, Server } from '@/types/api';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
@@ -51,6 +51,7 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
     fetchContainers();
   }, [server.id, toast]);
 
+  // ADD MISSING HANDLE RETRY FUNCTION
   const handleRetry = async () => {
     try {
       setIsLoading(true);
@@ -69,15 +70,15 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
   const getStatusIcon = (status: Container['status']) => {
     switch (status) {
       case 'running':
-        return <Play className="h-4 w-4 text-status-online" fill="currentColor" />;
+        return <Play className="h-4 w-4 text-green-600" fill="currentColor" />;
       case 'stopped':
-        return <Square className="h-4 w-4 text-status-offline" />;
+        return <Square className="h-4 w-4 text-red-600" />;
       case 'paused':
-        return <Pause className="h-4 w-4 text-status-pending" />;
+        return <Pause className="h-4 w-4 text-yellow-600" />;
       case 'restarting':
-        return <RotateCcw className="h-4 w-4 text-status-pending animate-spin" />;
+        return <RotateCcw className="h-4 w-4 text-blue-600 animate-spin" />;
       default:
-        return <Square className="h-4 w-4 text-muted-foreground" />;
+        return <Square className="h-4 w-4 text-slate-400" />;
     }
   };
 
@@ -97,20 +98,22 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
 
   if (isLoading) {
     return (
-      <Card className="shadow-medium">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ContainerIcon className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+              <Database className="h-4 w-4 text-blue-600" />
+            </div>
             PostgreSQL Containers
           </CardTitle>
           <CardDescription>
-            Containers on {server.name}
+            Loading containers from {server.name}...
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full" />
+              <Skeleton key={i} className="h-40 w-full rounded-lg" />
             ))}
           </div>
         </CardContent>
@@ -120,21 +123,26 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
 
   if (error) {
     return (
-      <Card className="shadow-medium">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ContainerIcon className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+              <Database className="h-4 w-4 text-blue-600" />
+            </div>
             PostgreSQL Containers
           </CardTitle>
           <CardDescription>Containers on {server.name}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <Alert variant="destructive">
+            <Alert variant="destructive" className="border-red-200 bg-red-50">
               <AlertTitle>Failed to load containers</AlertTitle>
               <AlertDescription>{error}</AlertDescription>
             </Alert>
-            <Button onClick={handleRetry} variant="outline">Retry</Button>
+            <Button onClick={handleRetry} variant="outline" className="border-slate-300">
+              <RotateCcw className="h-4 w-4 mr-2" />
+              Retry
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -143,25 +151,36 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
 
   if (containers.length === 0) {
     return (
-      <Card className="shadow-medium">
+      <Card className="border-slate-200 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ContainerIcon className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+              <Database className="h-4 w-4 text-blue-600" />
+            </div>
             PostgreSQL Containers
           </CardTitle>
           <CardDescription>
             No PostgreSQL containers found on {server.name}
           </CardDescription>
         </CardHeader>
+        <CardContent>
+          <div className="text-center py-12">
+            <Database className="h-16 w-16 text-slate-300 mx-auto mb-4" />
+            <p className="text-slate-500 text-lg mb-2">No PostgreSQL containers</p>
+            <p className="text-slate-400 text-sm">No running PostgreSQL containers detected on this server.</p>
+          </div>
+        </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="shadow-medium">
+    <Card className="border-slate-200 shadow-sm">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ContainerIcon className="h-5 w-5 text-primary" />
+        <CardTitle className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+            <Database className="h-4 w-4 text-blue-600" />
+          </div>
           PostgreSQL Containers
         </CardTitle>
         <CardDescription>
@@ -173,36 +192,58 @@ export function ContainerGrid({ server, onContainerSelect, selectedContainer }: 
           {containers.map((container) => (
             <Card
               key={container.id}
-              className={`cursor-pointer transition-all duration-normal hover:shadow-glow ${
+              className={`cursor-pointer transition-all duration-200 border hover:shadow-md ${
                 selectedContainer?.id === container.id 
-                  ? 'ring-2 ring-primary shadow-glow' 
-                  : 'hover:shadow-medium'
+                  ? 'border-blue-400 shadow-md bg-blue-50/30 ring-1 ring-blue-200' 
+                  : 'border-slate-200 hover:border-blue-300'
               }`}
               onClick={() => onContainerSelect(container)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    {getStatusIcon(container.status)}
-                    {container.name}
+                  <CardTitle className="text-base flex items-center gap-3">
+                    <div className="flex items-center justify-center w-8 h-8 bg-blue-100 rounded-lg">
+                      <Database className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <div className="font-medium text-slate-800">{container.name}</div>
+                      <div className="text-xs text-slate-500 font-normal">ID: {container.id}</div>
+                    </div>
                   </CardTitle>
-                  <Badge variant={getStatusVariant(container.status)}>
-                    {container.status}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    {getStatusIcon(container.status)}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">
-                    <span className="font-medium">Image:</span> {container.image}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-slate-600">Status</span>
+                    <Badge 
+                      variant={getStatusVariant(container.status)}
+                      className={`${
+                        container.status === 'running' 
+                          ? 'bg-green-100 text-green-700 hover:bg-green-100' 
+                          : container.status === 'stopped'
+                          ? 'bg-red-100 text-red-700 hover:bg-red-100'
+                          : 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100'
+                      }`}
+                    >
+                      {container.status}
+                    </Badge>
+                  </div>
+                  <div className="text-sm text-slate-600">
+                    <span className="font-medium">Image:</span> 
+                    <span className="ml-1 text-slate-800">{container.image}</span>
                   </div>
                   {container.ports.length > 0 && (
-                    <div className="text-sm text-muted-foreground">
-                      <span className="font-medium">Ports:</span> {container.ports.join(', ')}
+                    <div className="text-sm text-slate-600">
+                      <span className="font-medium">Ports:</span>
+                      <span className="ml-1 text-slate-800">{container.ports.join(', ')}</span>
                     </div>
                   )}
-                  <Separator />
-                  <div className="text-xs text-muted-foreground">
+                  <Separator className="bg-slate-200" />
+                  <div className="text-xs text-slate-500">
                     Created: {new Date(container.created).toLocaleDateString()}
                   </div>
                 </div>
