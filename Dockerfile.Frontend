@@ -6,13 +6,13 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY frontend/package*.json ./
+COPY package*.json ./
 
 # Install ALL dependencies (including devDependencies for build tools like Vite)
 RUN npm install
 
 # Copy source code
-COPY frontend/ .
+COPY . .
 
 # Build the application using npx to ensure we find the local vite binary
 RUN npx vite build
