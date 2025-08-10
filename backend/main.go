@@ -37,51 +37,49 @@ func main() {
 	// Initialize handlers
 	handler := handlers.NewHandler(cfg, dockerService, sshService, postgresService, logger)
 
-	// Setup Gin router
-	r := gin.Default()
+    r := gin.Default()
 
-	// Add CORS middleware
-	r.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-
-		c.Next()
-	})
-
-	// API routes
-	api := r.Group("/api/v1")
-	{
-		api.GET("/servers", handler.GetServers)
-		api.GET("/servers/:serverID/containers", handler.GetContainers)
-		api.GET("/servers/:serverID/containers/:containerID/databases", handler.GetDatabases)
-		api.GET("/servers/:serverID/containers/:containerID/databases/:dbName/dump", handler.DownloadDump)
-		api.GET("/servers/:serverID/host/databases", handler.GetHostDatabases)
-    	api.GET("/servers/:serverID/host/databases/:dbName/dump", handler.DownloadHostDump)
-	}
-
-	// Health check endpoint
-	r.GET("/health", func(c *gin.Context) {
-    c.JSON(200, gin.H{
-        "status": "healthy",
-        "timestamp": time.Now().Unix(),
-        "service": "postgres-manager-backend",
+    // Add CORS middleware if needed
+    r.Use(func(c *gin.Context) {
+        c.Header("Access-Control-Allow-Origin", "*")
+        c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+        c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        if c.Request.Method == "OPTIONS" {
+            c.AbortWithStatus(204)
+            return
+        }
+        c.Next()
     })
-})
 
-	// Start server
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+    // Health check endpoint - ADD THIS BEFORE API ROUTES
+    r.GET("/health", func(c *gin.Context) {
+        c.JSON(200, gin.H{
+            "status":    "healthy",
+            "timestamp": time.Now().Unix(),
+            "service":   "postgres-manager-backend",
+        })
+    })
 
-	logger.Infof("Starting server on port %s", port)
-	if err := r.Run(":" + port); err != nil {
-		logger.Fatalf("Failed to start server: %v", err)
-	}
+    // API routes
+    api := r.Group("/api/v1")
+    {
+        api.GET("/servers", handler.GetServers)
+        api.GET("/servers/:serverID/containers", handler.GetContainers)
+        api.GET("/servers/:serverID/containers/:containerID/databases", handler.GetDatabases)
+        api.GET("/servers/:serverID/containers/:containerID/databases/:dbName/dump", handler.DownloadDump)
+        api.GET("/servers/:serverID/host/databases", handler.GetHostDatabases)
+        api.GET("/servers/:serverID/host/databases/:dbName/dump", handler.DownloadHostDump)
+    }
+
+    // Start server
+    port := os.Getenv("PORT")
+    if port == "" {
+        port = "8080"
+    }
+
+    logger.Infof("Starting server on port %s", port)
+    if err := r.Run(":" + port); err != nil {
+        logger.Fatalf("Failed to start server: %v", err)
+    }
 }
+
