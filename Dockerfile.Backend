@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# Build stage
-FROM golang:1.21-alpine AS builder
+# Build stage - Updated to Go 1.24
+FROM golang:1.24-alpine AS builder
 
 # Install git (needed for go mod download)
 RUN apk add --no-cache git
@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 FROM alpine:latest
 
 # Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+RUN apk --no-cache add ca-certificates wget
 
 WORKDIR /root/
 
