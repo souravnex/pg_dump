@@ -11,41 +11,27 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { apiService } from '@/services/api';
-import { useToast } from '@/hooks/use-toast';
+import { DownloadDialog } from '@/components/DownloadDialog';
 
 interface HostDatabaseGridProps {
   databases: Database[];
   isLoading: boolean;
-  onDownload: (dbName: string, options?: any) => void;
   serverName: string;
   server: Server;
 }
 
-export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName, server }: HostDatabaseGridProps) {
-  const { toast } = useToast();
+export function HostDatabaseGrid({ databases, isLoading, serverName, server }: HostDatabaseGridProps) {
+  const [showDownloadDialog, setShowDownloadDialog] = useState(false);
+  const [selectedDatabase, setSelectedDatabase] = useState<Database | null>(null);
 
-  const handleDirectDownload = async (database: Database) => {
-    try {
-      // Generate filename with timestamp
-      const now = new Date();
-      const timestamp = now.toISOString().slice(0, 19).replace(/:/g, '-');
-      const filename = `${database.name}_${timestamp}.sql`;
+  const handleDownloadClick = (database: Database) => {
+    setSelectedDatabase(database);
+    setShowDownloadDialog(true);
+  };
 
-      // Download directly without modal for host databases
-      await apiService.downloadHostDump(server.id, database.name, { fileName: filename });
-      
-      toast({
-        title: 'Download started',
-        description: `Downloading ${database.name} from host PostgreSQL`,
-      });
-    } catch (err) {
-      toast({
-        title: 'Download failed',
-        description: err instanceof Error ? err.message : 'Failed to download host database',
-        variant: 'destructive',
-      });
-    }
+  const handleDownloadClose = () => {
+    setShowDownloadDialog(false);
+    setSelectedDatabase(null);
   };
 
   if (isLoading) {
@@ -92,59 +78,71 @@ export function HostDatabaseGrid({ databases, isLoading, onDownload, serverName,
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ServerIcon className="h-5 w-5 text-green-600" />
-          Host PostgreSQL Databases
-        </CardTitle>
-        <CardDescription>
-          Found {databases.length} database{databases.length !== 1 ? 's' : ''} on host PostgreSQL
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {databases.map((database) => (
-            <Card key={database.name} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <DatabaseIcon className="h-4 w-4 text-green-600" />
-                    {database.name}
-                  </CardTitle>
-                  <Badge variant="outline" className="text-green-600 border-green-600">
-                    Host
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="space-y-2">
-                  <div className="text-sm text-muted-foreground">
-                    <span className="font-medium">Owner:</span> {database.owner}
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ServerIcon className="h-5 w-5 text-green-600" />
+            Host PostgreSQL Databases
+          </CardTitle>
+          <CardDescription>
+            Found {databases.length} database{databases.length !== 1 ? 's' : ''} on host PostgreSQL
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {databases.map((database) => (
+              <Card key={database.name} className="hover:shadow-md transition-shadow">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <DatabaseIcon className="h-4 w-4 text-green-600" />
+                      {database.name}
+                    </CardTitle>
+                    <Badge variant="outline" className="text-green-600 border-green-600">
+                      Host
+                    </Badge>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    <span className="font-medium">Encoding:</span> {database.encoding}
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-2">
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium">Owner:</span> {database.owner}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium">Encoding:</span> {database.encoding}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      <span className="font-medium">Size:</span> {database.size}
+                    </div>
+                    <div className="pt-2">
+                      <Button
+                        onClick={() => handleDownloadClick(database)}
+                        size="sm"
+                        className="w-full"
+                        variant="outline"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Dump
+                      </Button>
+                    </div>
                   </div>
-                  <div className="text-sm text-muted-foreground">
-                    <span className="font-medium">Size:</span> {database.size}
-                  </div>
-                  <div className="pt-2">
-                    <Button
-                      onClick={() => handleDirectDownload(database)}
-                      size="sm"
-                      className="w-full"
-                      variant="outline"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Dump
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {selectedDatabase && (
+        <DownloadDialog
+          isOpen={showDownloadDialog}
+          onClose={handleDownloadClose}
+          server={server}
+          database={selectedDatabase}
+          isHostDump={true}
+        />
+      )}
+    </>
   );
 }

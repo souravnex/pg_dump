@@ -87,16 +87,16 @@ class ApiService {
     return response.databases;
   }
 
-  async downloadHostDump(serverId: string, dbName: string, options?: DumpOptions): Promise<void> {
+  async downloadHostDump(serverId: string, dbName: string, options?: DumpOptions): Promise<Blob> {
     const params = new URLSearchParams();
     if (options?.schemaOnly) params.append('schema_only', 'true');
     if (options?.dataOnly) params.append('data_only', 'true');
-    
+
     const queryString = params.toString();
     const url = `/servers/${serverId}/host/databases/${dbName}/dump${queryString ? `?${queryString}` : ''}`;
-    
-    const filename = options?.fileName || `${dbName}_host.sql`;
-    await this.downloadFile(url, filename);
+
+    // Return the blob so the caller handles file saving
+    return this.downloadFile(url);
   }
 }
 

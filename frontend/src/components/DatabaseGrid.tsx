@@ -16,7 +16,6 @@ import { DownloadDialog } from '@/components/DownloadDialog';
 interface DatabaseGridProps {
   databases: Database[];
   isLoading: boolean;
-  onDownload: (dbName: string, options?: any) => Promise<void>;
   sourceType: string;
   containerName?: string;
   server: Server;
@@ -26,7 +25,6 @@ interface DatabaseGridProps {
 export function DatabaseGrid({ 
   databases, 
   isLoading, 
-  onDownload, 
   sourceType, 
   containerName,
   server,
@@ -104,7 +102,7 @@ export function DatabaseGrid({
                   {database.name}
                 </CardTitle>
                 <Badge variant="outline" className="text-blue-600 border-blue-600">
-                  {sourceType === 'container' ? 'Container' : 'Database'}
+                  Container
                 </Badge>
               </div>
             </CardHeader>
@@ -143,6 +141,7 @@ export function DatabaseGrid({
           server={server}
           container={container}
           database={selectedDatabase}
+          isHostDump={false}
         />
       )}
     </>

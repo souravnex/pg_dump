@@ -21,81 +21,84 @@ interface DownloadDialogProps {
   isOpen: boolean;
   onClose: () => void;
   server: Server;
-  // container is optional now for host DBs
-  container?: Container;
+  container?: Container;     // Optional for host DBs
   database: Database;
-  // flag to indicate host dump
-  isHostDump?: boolean;
+  isHostDump?: boolean;      // Pass true for host DB download
 }
 
-export function DownloadDialog({ isOpen, onClose, server, container, database, isHostDump = false }: DownloadDialogProps) {
+export function DownloadDialog({
+  isOpen,
+  onClose,
+  server,
+  container,
+  database,
+  isHostDump = false
+}: DownloadDialogProps) {
   const [options, setOptions] = useState<DumpOptions>({});
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const { toast } = useToast();
 
   const handleDownload = async () => {
-    try {
-      setIsDownloading(true);
-      setDownloadProgress(0);
+  try {
+    setIsDownloading(true);
+    setDownloadProgress(0);
 
-      // Simulate progress
-      const progressInterval = setInterval(() => {
-        setDownloadProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + 10;
-        });
-      }, 200);
-
-      let blob: Blob | void;
-
-      if (isHostDump) {
-        // Host DB download
-        await apiService.downloadHostDump(server.id, database.name, options);
-      } else if (container) {
-        // Container DB download
-        blob = await apiService.downloadDump(server.id, container.id, database.name, options);
-      } else {
-        throw new Error('Container ID missing for container dump');
-      }
-
-      clearInterval(progressInterval);
-      setDownloadProgress(100);
-
-      if (blob) {
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-        const suffix = options.dataOnly ? '_data' : options.schemaOnly ? '_schema' : '_full';
-        link.download = `${database.name}${suffix}_${timestamp}.sql`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-      }
-
-      toast({
-        title: "Download Complete",
-        description: `Database dump for ${database.name} has been downloaded successfully.`,
+    // Simulate progress bar
+    const progressInterval = setInterval(() => {
+      setDownloadProgress(prev => {
+        if (prev >= 90) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return prev + 10;
       });
+    }, 200);
 
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to download database dump. Please try again.';
-      toast({
-        title: 'Download Failed',
-        description: message,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsDownloading(false);
-      setDownloadProgress(0);
+    // One single logic for host AND container now
+    let blob: Blob;
+    if (isHostDump) {
+      blob = await apiService.downloadHostDump(server.id, database.name, options);
+    } else if (container) {
+      blob = await apiService.downloadDump(server.id, container.id, database.name, options);
+    } else {
+      throw new Error('Container ID is required for container dump');
     }
+
+    clearInterval(progressInterval);
+    setDownloadProgress(100);
+
+    // Save file to user's machine
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    const suffix = options.dataOnly ? '_data' : options.schemaOnly ? '_schema' : '_full';
+    link.download = `${database.name}${suffix}_${timestamp}.sql`;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: 'Download Complete',
+      description: `Database dump for ${database.name} has been downloaded successfully.`,
+    });
+
+    onClose();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to download database dump. Please try again.';
+    toast({
+      title: 'Download Failed',
+      description: message,
+      variant: 'destructive',
+    });
+  } finally {
+    setIsDownloading(false);
+    setDownloadProgress(0);
+  }
   };
+
 
   const handleOptionChange = (option: keyof DumpOptions, checked: boolean) => {
     setOptions(prev => ({
@@ -113,12 +116,13 @@ export function DownloadDialog({ isOpen, onClose, server, container, database, i
             Download Database Dump
           </DialogTitle>
           <DialogDescription>
-            Configure options for downloading {database.name}{" "}
+            Configure options for downloading {database.name}{' '}
             {isHostDump ? `from host ${server.name}` : `from container ${container?.name}`}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* DB Info */}
           <div className="bg-muted/50 p-4 rounded-lg space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <DatabaseIcon className="h-4 w-4 text-primary" />
@@ -134,9 +138,9 @@ export function DownloadDialog({ isOpen, onClose, server, container, database, i
 
           <Separator />
 
+          {/* Dump options */}
           <div className="space-y-4">
             <Label className="text-base font-medium">Dump Options</Label>
-            
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -173,6 +177,7 @@ export function DownloadDialog({ isOpen, onClose, server, container, database, i
             </div>
           </div>
 
+          {/* Progress bar */}
           {isDownloading && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
@@ -184,6 +189,7 @@ export function DownloadDialog({ isOpen, onClose, server, container, database, i
           )}
         </div>
 
+        {/* Buttons */}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={isDownloading}>
             Cancel
