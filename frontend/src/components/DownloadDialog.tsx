@@ -21,11 +21,14 @@ interface DownloadDialogProps {
   isOpen: boolean;
   onClose: () => void;
   server: Server;
-  container: Container;
+  // container is optional now for host DBs
+  container?: Container;
   database: Database;
+  // flag to indicate host dump
+  isHostDump?: boolean;
 }
 
-export function DownloadDialog({ isOpen, onClose, server, container, database }: DownloadDialogProps) {
+export function DownloadDialog({ isOpen, onClose, server, container, database, isHostDump = false }: DownloadDialogProps) {
   const [options, setOptions] = useState<DumpOptions>({});
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -36,9 +39,9 @@ export function DownloadDialog({ isOpen, onClose, server, container, database }:
       setIsDownloading(true);
       setDownloadProgress(0);
 
-      // Simulate progress for better UX
+      // Simulate progress
       const progressInterval = setInterval(() => {
-        setDownloadProgress((prev) => {
+        setDownloadProgress(prev => {
           if (prev >= 90) {
             clearInterval(progressInterval);
             return prev;
@@ -47,25 +50,33 @@ export function DownloadDialog({ isOpen, onClose, server, container, database }:
         });
       }, 200);
 
-      const blob = await apiService.downloadDump(server.id, container.id, database.name, options);
-      
+      let blob: Blob | void;
+
+      if (isHostDump) {
+        // Host DB download
+        await apiService.downloadHostDump(server.id, database.name, options);
+      } else if (container) {
+        // Container DB download
+        blob = await apiService.downloadDump(server.id, container.id, database.name, options);
+      } else {
+        throw new Error('Container ID missing for container dump');
+      }
+
       clearInterval(progressInterval);
       setDownloadProgress(100);
 
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      
-      // Generate filename
-      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-      const suffix = options.dataOnly ? '_data' : options.schemaOnly ? '_schema' : '_full';
-      link.download = `${database.name}${suffix}_${timestamp}.sql`;
-      
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      if (blob) {
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+        const suffix = options.dataOnly ? '_data' : options.schemaOnly ? '_schema' : '_full';
+        link.download = `${database.name}${suffix}_${timestamp}.sql`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }
 
       toast({
         title: "Download Complete",
@@ -102,7 +113,8 @@ export function DownloadDialog({ isOpen, onClose, server, container, database }:
             Download Database Dump
           </DialogTitle>
           <DialogDescription>
-            Configure options for downloading {database.name} from {container.name}
+            Configure options for downloading {database.name}{" "}
+            {isHostDump ? `from host ${server.name}` : `from container ${container?.name}`}
           </DialogDescription>
         </DialogHeader>
 
