@@ -44,27 +44,19 @@ export function DatabaseGrid({
   };
 
   if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DatabaseIcon className="h-5 w-5 text-blue-600" />
-            {sourceType === 'container' ? 'Container Databases' : 'Databases'}
-          </CardTitle>
-          <CardDescription>
-            {containerName ? `Loading databases from ${containerName}...` : 'Loading databases...'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 w-full" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
+  return (
+    <Card>
+      <CardContent>
+        <div className="flex flex-col items-center justify-center py-8">
+          {/* Loader Spinner */}
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-600"></div>
+          <p className="mt-3 text-blue-600 font-medium">Loading...</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 
   if (databases.length === 0) {
     return (

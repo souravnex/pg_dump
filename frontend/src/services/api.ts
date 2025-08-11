@@ -98,7 +98,16 @@ class ApiService {
     // Return the blob so the caller handles file saving
     return this.downloadFile(url);
   }
+
+  async healthCheck(): Promise<void> {
+    const res = await fetch('/health');
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(text || `Health check failed: ${res.status}`);
+    }
+  }
 }
+
 
 export const apiService = new ApiService();
 export type { Server, Container, Database, DumpOptions } from '@/types/api';
