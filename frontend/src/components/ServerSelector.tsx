@@ -99,18 +99,22 @@ export function ServerSelector({ onServerSelect, selectedServer }: ServerSelecto
 
   if (isLoading) {
     return (
-      <Card className="shadow-medium transition-all duration-normal">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ServerIcon className="h-5 w-5" />
-            Select Server
+      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 shadow-lg backdrop-blur-sm h-full">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-3 text-xl font-bold">
+            <div className="p-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg shadow-md">
+              <ServerIcon className="h-6 w-6 text-white" />
+            </div>
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">
+              🚀 Select Server
+            </span>
           </CardTitle>
-          <CardDescription>
-            Choose a PostgreSQL server to manage
+          <CardDescription className="text-gray-600 font-medium">
+            Choose a PostgreSQL server to manage your databases
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-12 w-full rounded-lg bg-gradient-to-r from-gray-200 to-gray-300" />
         </CardContent>
       </Card>
     );
@@ -118,21 +122,33 @@ export function ServerSelector({ onServerSelect, selectedServer }: ServerSelecto
 
   if (error) {
     return (
-      <Card className="shadow-medium transition-all duration-normal">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ServerIcon className="h-5 w-5" />
-            Select Server
+      <Card className="bg-gradient-to-r from-red-50 to-pink-50 border-2 border-red-200 shadow-lg backdrop-blur-sm h-full">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-3 text-xl font-bold">
+            <div className="p-2 bg-gradient-to-r from-red-500 to-pink-600 rounded-lg shadow-md">
+              <ServerIcon className="h-6 w-6 text-white" />
+            </div>
+            <span className="bg-gradient-to-r from-red-600 to-pink-700 bg-clip-text text-transparent">
+              🚀 Select Server
+            </span>
           </CardTitle>
-          <CardDescription>Choose a PostgreSQL server to manage</CardDescription>
+          <CardDescription className="text-gray-600 font-medium">
+            Choose a PostgreSQL server to manage your databases
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <Alert variant="destructive">
-              <AlertTitle>Failed to load servers</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+            <Alert variant="destructive" className="border-red-300 bg-red-50/80 backdrop-blur-sm">
+              <AlertTitle className="text-red-800 font-semibold">⚠️ Failed to load servers</AlertTitle>
+              <AlertDescription className="text-red-700">{error}</AlertDescription>
             </Alert>
-            <Button onClick={handleRetry} variant="outline">Retry</Button>
+            <Button 
+              onClick={handleRetry} 
+              variant="outline"
+              className="bg-gradient-to-r from-red-500 to-pink-600 text-white border-none"
+            >
+              🔄 Retry
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -140,14 +156,18 @@ export function ServerSelector({ onServerSelect, selectedServer }: ServerSelecto
   }
 
   return (
-    <Card className="shadow-medium transition-all duration-normal hover:shadow-large">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <ServerIcon className="h-5 w-5 text-primary" />
-          Select Server
+    <Card className="bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-200 shadow-lg backdrop-blur-sm h-full">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-3 text-xl font-bold">
+          <div className="p-2 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg shadow-md">
+            <ServerIcon className="h-6 w-6 text-white" />
+          </div>
+          <span className="bg-gradient-to-r from-emerald-600 to-teal-700 bg-clip-text text-transparent">
+            🚀 Select Server
+          </span>
         </CardTitle>
-        <CardDescription>
-          Choose a PostgreSQL server to manage
+        <CardDescription className="text-gray-600 font-medium">
+          Choose a PostgreSQL server to manage your databases
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -158,24 +178,39 @@ export function ServerSelector({ onServerSelect, selectedServer }: ServerSelecto
             if (server) onServerSelect(server);
           }}
         >
-          <SelectTrigger className="transition-all duration-fast">
-            <SelectValue placeholder="Choose a server" />
+          <SelectTrigger className="h-12 bg-white/70 backdrop-blur-sm border-2 border-emerald-300 rounded-lg shadow-md focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+            <SelectValue placeholder="🔍 Choose a server" className="text-gray-700 font-medium" />
           </SelectTrigger>
-          <SelectContent className="bg-popover border shadow-large">
+          <SelectContent className="bg-white/95 backdrop-blur-lg border-2 border-emerald-200 rounded-xl shadow-xl">
             {servers.map((server) => (
-              <SelectItem key={server.id} value={server.id}>
+              <SelectItem 
+                key={server.id} 
+                value={server.id}
+                className="rounded-lg m-1 p-3"
+              >
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3">
-                    {getStatusIcon(server.status)}
+                    <div className="p-1.5 rounded-md bg-gradient-to-r from-emerald-500 to-teal-600">
+                      {getStatusIcon(server.status)}
+                    </div>
                     <div className="flex flex-col">
-                      <span className="font-medium">{server.name}</span>
-                      <span className="text-sm text-muted-foreground">
-                        {server.host}:{server.port}
+                      <span className="font-semibold text-gray-800">{server.name}</span>
+                      <span className="text-sm text-gray-500 font-medium">
+                        📡 {server.host}:{server.port}
                       </span>
                     </div>
                   </div>
-                  <Badge variant={getStatusVariant(server.status)} className="ml-2">
-                    {server.status}
+                  <Badge 
+                    variant={getStatusVariant(server.status)} 
+                    className={`ml-2 font-semibold shadow-sm ${
+                      server.status === 'online' 
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-600 text-white border-green-400' 
+                        : server.status === 'offline'
+                        ? 'bg-gradient-to-r from-red-500 to-rose-600 text-white border-red-400'
+                        : 'bg-gradient-to-r from-yellow-500 to-amber-600 text-white border-yellow-400'
+                    }`}
+                  >
+                    {server.status === 'online' ? '✅' : server.status === 'offline' ? '❌' : '⏳'} {server.status}
                   </Badge>
                 </div>
               </SelectItem>
