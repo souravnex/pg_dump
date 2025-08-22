@@ -1,23 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Server, Container, Database } from '@/types/api';
 import { apiService } from '@/services/api';
 import { useToast } from '@/hooks/use-toast';
-import { ContainerSidebar } from '@/components/ContainerSidebar';
 import { DatabaseGrid } from '@/components/DatabaseGrid';
 import { HostDatabaseGrid } from '@/components/HostDatabaseGrid';
+import { ContainerSidebar } from '@/components/ContainerSidebar';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle
 } from '@/components/ui/card';
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent
-} from '@/components/ui/tabs';
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Database as DatabaseIcon,
   Box as ContainerIcon,
@@ -31,52 +28,48 @@ interface ServerDatabaseViewProps {
 
 export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
   const [containers, setContainers] = useState<Container[]>([]);
-  const [hostDatabases, setHostDatabases] = useState<Database[]>([]);
   const [selectedContainer, setSelectedContainer] = useState<Container | null>(null);
   const [containerDatabases, setContainerDatabases] = useState<Database[]>([]);
+  const [hostDatabases, setHostDatabases] = useState<Database[]>([]);
   const [isLoadingContainers, setIsLoadingContainers] = useState(true);
-  const [isLoadingHost, setIsLoadingHost] = useState(true);
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
+  const [isLoadingHost, setIsLoadingHost] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const databasesSectionRef = useRef<HTMLDivElement | null>(null);
   const contentCardRef = useRef<HTMLDivElement | null>(null);
 
-  // Fetch containers
-  useEffect(() => {
-    const fetchContainers = async () => {
-      try {
-        setIsLoadingContainers(true);
-        const containerList = await apiService.getContainers(server.id);
-        setContainers(containerList);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to fetch containers';
-        toast({
-          title: 'Error loading containers',
-          description: message,
-          variant: 'destructive',
-        });
-      } finally {
-        setIsLoadingContainers(false);
+  const fetchContainers = useCallback(async () => {
+    try {
+      setIsLoadingContainers(true);
+      setError(null);
+      const containerList = await apiService.getContainers(server.id);
+      setContainers(containerList);
+      // Keep previous selection if it still exists
+      if (selectedContainer) {
+        const stillExists = containerList.find((c) => c.id === selectedContainer.id);
+        if (!stillExists) {
+          setSelectedContainer(null);
+          setContainerDatabases([]);
+        }
       }
-    };
-    fetchContainers();
-  }, [server.id, toast]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch containers';
+      setError(message);
+      toast({
+        title: 'Error loading containers',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoadingContainers(false);
+    }
+  }, [server.id, toast, selectedContainer]);
 
-  // Fetch host databases
+  // Fetch containers on mount/server change
   useEffect(() => {
-    const fetchHostDatabases = async () => {
-      try {
-        setIsLoadingHost(true);
-        const databases = await apiService.getHostDatabases(server.id);
-        setHostDatabases(databases);
-      } catch (err) {
-        setHostDatabases([]);
-      } finally {
-        setIsLoadingHost(false);
-      }
-    };
-    fetchHostDatabases();
-  }, [server.id]);
+    fetchContainers();
+  }, [fetchContainers]);
 
   // Fetch container databases when container is selected
   useEffect(() => {
@@ -120,8 +113,6 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
       contentCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
   };
-
-  const getTotalDatabaseCount = () => hostDatabases.length + containerDatabases.length;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto">
@@ -177,7 +168,7 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                     </div>
 
                     {/* Container Databases */}
-                    <div className="flex-1 p-6">
+                    <div className="flex-1 p-6 min-w-0 overflow-hidden">
                       {!selectedContainer ? (
                         <div className="h-full flex flex-col items-center justify-center text-center py-16">
                           <DatabaseIcon className="h-12 w-12 text-gray-400 mb-4" />
@@ -189,7 +180,7 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                           </p>
                         </div>
                       ) : (
-                        <div ref={databasesSectionRef} className="space-y-4">
+                        <div ref={databasesSectionRef} className="space-y-4 w-full">
                           <div>
                             <h2 className="text-xl font-semibold text-gray-900 mb-1">
                               {selectedContainer.name}
@@ -198,14 +189,16 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                               PostgreSQL databases inside this container
                             </p>
                           </div>
-                          <DatabaseGrid
-                            databases={containerDatabases}
-                            isLoading={isLoadingDatabases}
-                            sourceType="container"
-                            containerName={selectedContainer.name}
-                            server={server}
-                            container={selectedContainer}
-                          />
+                          <div className="w-full">
+                            <DatabaseGrid
+                              databases={containerDatabases}
+                              isLoading={isLoadingDatabases}
+                              sourceType="container"
+                              containerName={selectedContainer.name}
+                              server={server}
+                              container={selectedContainer}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -237,8 +230,8 @@ export function ServerDatabaseView({ server }: ServerDatabaseViewProps) {
                 </CardContent>
               </Card>
             </TabsContent>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
       </Tabs>
     </div>
   );

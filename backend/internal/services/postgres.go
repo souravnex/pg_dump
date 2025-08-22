@@ -154,7 +154,9 @@ func (s *PostgresService) isValidDatabaseName(name string) bool {
 	if name == "" {
 		return false
 	}
-	
+	if name == "postgres"{
+		return false
+	}
 	// Skip file paths (containing / or \)
 	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
 		return false

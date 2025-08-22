@@ -84,16 +84,16 @@ export function DatabaseGrid({
 
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 w-full">
         {databases.map((database) => (
-          <Card key={database.name} className="hover:shadow-md transition-shadow">
+          <Card key={database.name} className="hover:shadow-md transition-shadow min-w-0">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <DatabaseIcon className="h-4 w-4 text-blue-600" />
-                  {database.name}
+                <CardTitle className="text-base flex items-center gap-2 truncate">
+                  <DatabaseIcon className="h-4 w-4 text-blue-600 flex-shrink-0" />
+                  <span className="truncate">{database.name}</span>
                 </CardTitle>
-                <Badge variant="outline" className="text-blue-600 border-blue-600">
+                <Badge variant="outline" className="text-blue-600 border-blue-600 flex-shrink-0">
                   Container
                 </Badge>
               </div>
@@ -101,7 +101,7 @@ export function DatabaseGrid({
             <CardContent className="pt-0">
               <div className="space-y-2">
                 <div className="text-sm text-muted-foreground">
-                  <span className="font-medium">Owner:</span> {database.owner}
+                  <span className="font-medium">Owner:</span> <span className="truncate">{database.owner}</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
                   <span className="font-medium">Encoding:</span> {database.encoding}
