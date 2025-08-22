@@ -47,8 +47,8 @@ func (s *PostgresService) GetDatabasesViaSSH(ctx context.Context, server *config
 		postgresUser = "postgres" // Default fallback
 	}
 
-	// Command to list databases using the correct PostgreSQL user
-	dockerCmd := fmt.Sprintf(`docker exec %s psql -U %s -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, containerID, postgresUser)
+	// Command to list databases with size information using the correct PostgreSQL user
+	dockerCmd := fmt.Sprintf(`docker exec %s psql -U %s -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`, containerID, postgresUser)
 
 	output, err := sshService.ExecuteRemoteCommand(server, dockerCmd)
 	if err != nil {
@@ -68,7 +68,7 @@ func (s *PostgresService) GetDatabasesViaSSH(ctx context.Context, server *config
 					username = strings.TrimSpace(username)
 					
 					// Try with the found username
-					dockerCmd = fmt.Sprintf(`docker exec %s psql -U %s -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, containerID, username)
+					dockerCmd = fmt.Sprintf(`docker exec %s psql -U %s -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`, containerID, username)
 					output, err = sshService.ExecuteRemoteCommand(server, dockerCmd)
 					if err == nil {
 						break
@@ -79,7 +79,7 @@ func (s *PostgresService) GetDatabasesViaSSH(ctx context.Context, server *config
 		
 		// If still failing, try without specifying user (uses default)
 		if err != nil {
-			dockerCmd = fmt.Sprintf(`docker exec %s psql -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, containerID)
+			dockerCmd = fmt.Sprintf(`docker exec %s psql -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`, containerID)
 			output, err = sshService.ExecuteRemoteCommand(server, dockerCmd)
 		}
 
@@ -95,13 +95,13 @@ func (s *PostgresService) GetDatabasesViaSSH(ctx context.Context, server *config
 
 // getLocalDatabases handles local database discovery
 func (s *PostgresService) getLocalDatabases(ctx context.Context, containerID string) ([]models.DatabaseResponse, error) {
-	// Use local docker command
-	cmd := exec.Command("docker", "exec", containerID, "psql", "-U", "postgres", "-tAc", "SELECT datname FROM pg_database WHERE datistemplate = false;")
+	// Use local docker command with size information
+	cmd := exec.Command("docker", "exec", containerID, "psql", "-U", "postgres", "-tAc", "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;")
 	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Try alternative approaches for local as well
-		cmd = exec.Command("docker", "exec", containerID, "psql", "-tAc", "SELECT datname FROM pg_database WHERE datistemplate = false;")
+		cmd = exec.Command("docker", "exec", containerID, "psql", "-tAc", "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;")
 		output, err = cmd.CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get local databases: %w", err)
@@ -111,7 +111,7 @@ func (s *PostgresService) getLocalDatabases(ctx context.Context, containerID str
 	return s.parseDatabaseOutput(string(output)), nil
 }
 
-// parseDatabaseOutput parses the output from psql command
+// parseDatabaseOutput parses the output from psql command with database details
 func (s *PostgresService) parseDatabaseOutput(output string) []models.DatabaseResponse {
 	var databases []models.DatabaseResponse
 	
@@ -120,26 +120,56 @@ func (s *PostgresService) parseDatabaseOutput(output string) []models.DatabaseRe
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if line == "" || line == "datname" {
+		if line == "" {
 			continue
 		}
 		
-		// Skip system databases if desired
-		if line == "template0" || line == "template1" {
+		// Split the line by pipe separator (psql -tAc uses pipe as separator)
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			// Fallback for old format or malformed output
+			if !s.isValidDatabaseName(line) {
+				s.logger.Warnf("Skipping invalid database name: %s", line)
+				continue
+			}
+			
+			// Skip system databases
+			if line == "template0" || line == "template1" {
+				continue
+			}
+			
+			database := models.DatabaseResponse{
+				Name:     line,
+				Owner:    "postgres",
+				Encoding: "UTF8",
+				Size:     "Unknown",
+			}
+			databases = append(databases, database)
 			continue
 		}
 		
-		// Validate database name - filter out file paths and invalid names
-		if !s.isValidDatabaseName(line) {
-			s.logger.Warnf("Skipping invalid database name: %s", line)
+		// Parse the new format: name|owner|encoding|size
+		dbName := strings.TrimSpace(parts[0])
+		owner := strings.TrimSpace(parts[1])
+		encoding := strings.TrimSpace(parts[2])
+		size := strings.TrimSpace(parts[3])
+		
+		// Skip system databases
+		if dbName == "template0" || dbName == "template1" {
+			continue
+		}
+		
+		// Validate database name
+		if !s.isValidDatabaseName(dbName) {
+			s.logger.Warnf("Skipping invalid database name: %s", dbName)
 			continue
 		}
 		
 		database := models.DatabaseResponse{
-			Name:     line,
-			Owner:    "postgres", // Default, could be enhanced
-			Encoding: "UTF8",     // Default, could be enhanced
-			Size:     "Unknown",  // Could be enhanced with additional query
+			Name:     dbName,
+			Owner:    owner,
+			Encoding: encoding,
+			Size:     size,
 		}
 		
 		databases = append(databases, database)
@@ -421,18 +451,24 @@ func (s *PostgresService) GetHostPostgreSQLDatabases(ctx context.Context, server
         postgresUser = "postgres"
     }
 
-    // Command to list databases from host PostgreSQL
-    cmd := fmt.Sprintf(`sudo -u %s psql -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, postgresUser)
+    // Command to list databases from host PostgreSQL with proper working directory
+    cmd := fmt.Sprintf(`cd /tmp && sudo -u %s psql -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`, postgresUser)
 
     output, err := sshService.ExecuteRemoteCommand(server, cmd)
     if err != nil {
         s.logger.Warnf("First attempt failed: %v. Trying alternative method...", err)
         // Try alternative methods if sudo doesn't work
-        cmd = fmt.Sprintf(`psql -U %s -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, postgresUser)
+        cmd = fmt.Sprintf(`cd /tmp && psql -U %s -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`, postgresUser)
         output, err = sshService.ExecuteRemoteCommand(server, cmd)
         if err != nil {
-            s.logger.Errorf("Both PostgreSQL connection attempts failed: %v", err)
-            return nil, fmt.Errorf("PostgreSQL not found on host or access denied: %w", err)
+            s.logger.Warnf("Alternative method failed: %v. Trying without user specification...", err)
+            // Final fallback - try with default connection
+            cmd = `cd /tmp && psql -tAc "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;"`
+            output, err = sshService.ExecuteRemoteCommand(server, cmd)
+            if err != nil {
+                s.logger.Errorf("All PostgreSQL connection attempts failed: %v", err)
+                return nil, fmt.Errorf("PostgreSQL not found on host or access denied: %w", err)
+            }
         }
     }
 
@@ -521,7 +557,7 @@ func (s *PostgresService) containsErrorMessages(output string) bool {
 
 // getLocalHostDatabases handles local host PostgreSQL
 func (s *PostgresService) getLocalHostDatabases(ctx context.Context) ([]models.DatabaseResponse, error) {
-    cmd := exec.Command("psql", "-U", "postgres", "-tAc", "SELECT datname FROM pg_database WHERE datistemplate = false;")
+    cmd := exec.Command("psql", "-U", "postgres", "-tAc", "SELECT d.datname, r.rolname, pg_encoding_to_char(d.encoding), pg_size_pretty(pg_database_size(d.datname)) FROM pg_database d JOIN pg_roles r ON d.datdba = r.oid WHERE d.datistemplate = false;")
     output, err := cmd.CombinedOutput()
     if err != nil {
         s.logger.Errorf("Failed to execute local PostgreSQL command: %v", err)
