@@ -115,6 +115,8 @@ func (s *PostgresService) getLocalDatabases(ctx context.Context, containerID str
 func (s *PostgresService) parseDatabaseOutput(output string) []models.DatabaseResponse {
 	var databases []models.DatabaseResponse
 	
+	s.logger.Debugf("Parsing database output: %s", output)
+	
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -124,6 +126,12 @@ func (s *PostgresService) parseDatabaseOutput(output string) []models.DatabaseRe
 		
 		// Skip system databases if desired
 		if line == "template0" || line == "template1" {
+			continue
+		}
+		
+		// Validate database name - filter out file paths and invalid names
+		if !s.isValidDatabaseName(line) {
+			s.logger.Warnf("Skipping invalid database name: %s", line)
 			continue
 		}
 		
@@ -138,6 +146,46 @@ func (s *PostgresService) parseDatabaseOutput(output string) []models.DatabaseRe
 	}
 	
 	return databases
+}
+
+// isValidDatabaseName validates if a string is a valid PostgreSQL database name
+func (s *PostgresService) isValidDatabaseName(name string) bool {
+	// Skip empty names
+	if name == "" {
+		return false
+	}
+	
+	// Skip file paths (containing / or \)
+	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
+		return false
+	}
+	
+	// Skip paths starting with dot (like .ssh)
+	if strings.HasPrefix(name, ".") {
+		return false
+	}
+	
+	// Skip error messages or commands
+	if strings.Contains(name, "psql:") || strings.Contains(name, "error:") || 
+	   strings.Contains(name, "ERROR:") || strings.Contains(name, "FATAL:") {
+		return false
+	}
+	
+	// PostgreSQL database names should be alphanumeric with underscores/hyphens
+	// and should not exceed 63 characters
+	if len(name) > 63 {
+		return false
+	}
+	
+	// Check for valid characters (letters, numbers, underscore, hyphen)
+	for _, char := range name {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || 
+		     (char >= '0' && char <= '9') || char == '_' || char == '-') {
+			return false
+		}
+	}
+	
+	return true
 }
 
 // CreateDump creates a PostgreSQL database dump (legacy method)
@@ -376,12 +424,29 @@ func (s *PostgresService) GetHostPostgreSQLDatabases(ctx context.Context, server
 
     output, err := sshService.ExecuteRemoteCommand(server, cmd)
     if err != nil {
+        s.logger.Warnf("First attempt failed: %v. Trying alternative method...", err)
         // Try alternative methods if sudo doesn't work
         cmd = fmt.Sprintf(`psql -U %s -tAc "SELECT datname FROM pg_database WHERE datistemplate = false;"`, postgresUser)
         output, err = sshService.ExecuteRemoteCommand(server, cmd)
         if err != nil {
+            s.logger.Errorf("Both PostgreSQL connection attempts failed: %v", err)
             return nil, fmt.Errorf("PostgreSQL not found on host or access denied: %w", err)
         }
+    }
+
+    // Log the raw output for debugging
+    s.logger.Debugf("Raw PostgreSQL output: %q", output)
+    
+    // Check if output contains error indicators before parsing
+    if s.containsErrorMessages(output) {
+        s.logger.Warnf("PostgreSQL command output contains error messages: %s", output)
+        return nil, fmt.Errorf("PostgreSQL command failed with error output: %s", output)
+    }
+
+    // Check if output is empty or contains only whitespace
+    if strings.TrimSpace(output) == "" {
+        s.logger.Warnf("Empty output from PostgreSQL command")
+        return []models.DatabaseResponse{}, nil
     }
 
     databases := s.parseDatabaseOutput(output)
@@ -428,12 +493,47 @@ func (s *PostgresService) buildHostDumpCommand(server *config.Server, dbName str
     return cmd
 }
 
+// containsErrorMessages checks if output contains common error patterns
+func (s *PostgresService) containsErrorMessages(output string) bool {
+    errorPatterns := []string{
+        "psql: error:",
+        "psql: FATAL:",
+        "psql: could not connect",
+        "Permission denied",
+        "No such file or directory",
+        "command not found",
+        "Connection refused",
+        "sudo:",
+        "password authentication failed",
+        "role \"postgres\" does not exist",
+    }
+    
+    lowerOutput := strings.ToLower(output)
+    for _, pattern := range errorPatterns {
+        if strings.Contains(lowerOutput, strings.ToLower(pattern)) {
+            return true
+        }
+    }
+    return false
+}
+
 // getLocalHostDatabases handles local host PostgreSQL
 func (s *PostgresService) getLocalHostDatabases(ctx context.Context) ([]models.DatabaseResponse, error) {
     cmd := exec.Command("psql", "-U", "postgres", "-tAc", "SELECT datname FROM pg_database WHERE datistemplate = false;")
     output, err := cmd.CombinedOutput()
     if err != nil {
+        s.logger.Errorf("Failed to execute local PostgreSQL command: %v", err)
         return nil, fmt.Errorf("failed to get local host databases: %w", err)
     }
-    return s.parseDatabaseOutput(string(output)), nil
+    
+    outputStr := string(output)
+    s.logger.Debugf("Local PostgreSQL raw output: %q", outputStr)
+    
+    // Check for error messages in output
+    if s.containsErrorMessages(outputStr) {
+        s.logger.Warnf("Local PostgreSQL command output contains errors: %s", outputStr)
+        return nil, fmt.Errorf("PostgreSQL command failed: %s", outputStr)
+    }
+    
+    return s.parseDatabaseOutput(outputStr), nil
 }
